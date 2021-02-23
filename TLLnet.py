@@ -103,6 +103,20 @@ class TLLnet:
 
         self.linearLayer.set_weights(currWeights)
     
+    def getLocalLinFns(self, out=0):
+        currWeights = self.linearLayer.get_weights()
+
+        return [ \
+                currWeights[0][:, (out*self.N):((out+1)*self.N) ], \
+                currWeights[1][ (out*self.N):((out+1)*self.N) ] \
+            ]
+    
+    def getAllLocalLinFns(self):
+
+        return [ \
+                self.getLocalLinFns(out=k) for k in range(self.M) \
+            ]
+    
     def setSelector(self, arr, idx, out=0):
         if idx >= self.M:
             raise ValueError('Specified index must be less than the number of UO Regions!')
@@ -113,6 +127,20 @@ class TLLnet:
         currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = arr
 
         self.selectorLayer.set_weights(currWeights)
+    
+    def getSelector(self, idx, out=0):
+        if idx >= self.M:
+            raise ValueError('Specified index must be less than the number of UO Regions!')
+
+        currWeights = self.selectorLayer.get_weights()
+
+        return currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ]
+    
+    def getAllSelectors(self):
+
+        return [ \
+                [self.getSelector(j, out=k) for j in range(self.M)] for k in range(self.m) \
+            ]
 
 
 def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,flat=False):
