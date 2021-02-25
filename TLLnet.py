@@ -128,13 +128,24 @@ class TLLnet:
 
         self.selectorLayer.set_weights(currWeights)
     
+    def setSelectorBroken(self, arr, idx, out=0):
+        if idx >= self.M:
+            raise ValueError('Specified index must be less than the number of UO Regions!')
+
+        currWeights = self.selectorLayer.get_weights()
+
+        currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = np.zeros((self.m*self.N,self.N))
+        currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = arr
+
+        self.selectorLayer.set_weights(currWeights)
+    
     def getSelector(self, idx, out=0):
         if idx >= self.M:
             raise ValueError('Specified index must be less than the number of UO Regions!')
 
         currWeights = self.selectorLayer.get_weights()
 
-        return currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ]
+        return currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ]
     
     def getAllSelectors(self):
 
