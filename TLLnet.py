@@ -142,6 +142,94 @@ class TLLnet:
                 [self.getSelector(j, out=k) for j in range(self.M)] for k in range(self.m) \
             ]
 
+    def selectorMatFromSet(self,actSet):
+        if len(actSet) == 0:
+            raise ValueError('Please specify a non-empty set!')
+        e = np.eye(self.N)
+        ret = np.zeros((self.N,self.N))
+        insertCounter = 0
+        for i in actSet:
+            ret[:,insertCounter] = e[:,i]
+            insertCounter += 1
+        for i in range(insertCounter,len(e)):
+            ret[:,i] = ret[:,insertCounter-1]
+        
+        return ret
+
+    def generateRandomCPWA(self,scale=1.0, ext=np.array([-10,10]), iterations=100000):
+        if len(ext.shape)==1:
+            ext = np.vstack([ext for i in range(self.n)])
+        
+        for out in range(self.m):
+            kern = np.random.normal(loc=0, scale=scale/10, size=(self.n, self.N))
+            bias = np.random.normal(loc=0, scale=scale, size=(self.N,))
+            
+            idxs = np.array([ i for i in range(self.N) ])
+            
+            selMats = [[] for i in range(self.M)]
+            selSets = [set([]) for i in range(self.M)]
+            selSets[0] = intToSet( myRandSet(self.N) )
+            selMats[0] = self.selectorMatFromSet(selSets[0])
+            
+            matCounter = 1
+            itCnt = iterations
+            while matCounter < self.M and itCnt > 0:
+                candidateSet = intToSet( myRandSet(self.N) )
+                valid=True
+                for k in range(matCounter):
+                    if candidateSet.issubset(selSets[k]) or selSets[k].issubset(candidateSet) or selSets[k]==candidateSet:
+                        valid=False
+                        break
+                if valid:
+                    selSets[matCounter] = candidateSet
+                    selMats[matCounter] = self.selectorMatFromSet(candidateSet)
+                    matCounter += 1
+                itCnt -= 1
+
+            intersections = [[] for k in range(matCounter)]
+            for k in range(matCounter):
+                intersections[k], resid, rank, singVals = np.linalg.lstsq( \
+                        (kern @ selMats[k])[0:len(selSets[k]),:].T, \
+                        (-(bias.reshape((1,len(bias))) @ selMats[k])[0:len(selSets[k])]).flatten() \
+                    )
+                intersections[k] = np.pad(intersections[k],(0,self.n),'maximum')[0:self.n]
+            intersections = np.array(intersections)
+            for k in range(matCounter,self.M):
+                selMats[k] = selMats[matCounter-1]
+            # kern = np.diag(0.5*(ext[out][1]-ext[out][0])/np.max(np.abs(intersections),axis=0)) @ kern
+            kern = scale * (np.max(np.abs(intersections))) * kern
+            self.setLocalLinFns(kern,bias,out=out)
+            for k in range(self.M):
+                self.setSelector(selMats[k],k,out=out)
+            # print(intersections)
+            
+
+def myRandSet(N):
+    if N <= 63:
+        intOut = int(np.random.randint(low = 1, high=((2**N)-1)))
+    else:
+        intOut = 0
+        Ntemp = N
+        while Ntemp > 0:
+            if Ntemp > 63:
+                size = 63
+            else:
+                size = Ntemp
+            intOut = intOut << size
+            intOut += int(np.random.randint(low = 1 if size > 1 else 0, high=((2**size)-1)))
+            Ntemp -= size
+    return intOut
+
+def intToSet(input_int):
+    output_list = []
+    intCopy = input_int
+    index = 0
+    while intCopy > 0:
+        if intCopy & 1 > 0:
+            output_list.append(index)
+        index += 1
+        intCopy = intCopy >> 1
+    return frozenset(output_list)
 
 def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,flat=False):
 
