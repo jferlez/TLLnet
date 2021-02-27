@@ -114,7 +114,7 @@ class TLLnet:
     def getAllLocalLinFns(self):
 
         return [ \
-                self.getLocalLinFns(out=k) for k in range(self.M) \
+                self.getLocalLinFns(out=k) for k in range(self.m) \
             ]
     
     def setSelector(self, arr, idx, out=0):
