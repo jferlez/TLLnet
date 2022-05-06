@@ -11,6 +11,7 @@ import scipy.special
 import scipy
 import re
 from functools import reduce
+from copy import deepcopy
 
 npDataType = np.float64
 tfDataType = tf.float64
@@ -19,17 +20,51 @@ K.set_floatx('float64')
 
 class TLLnet:
 
-    def __init__(self, input_dim=1, output_dim=1, linear_fns=1, uo_regions=None, incBias=False, flat=False):
+    def __init__(self, input_dim=1, output_dim=1, linear_fns=1, uo_regions=None):
         self.n=input_dim
         self.m=output_dim
         self.N=linear_fns
-        self.flat = flat
-        self.incBias = incBias
         if uo_regions == None:
             self.M = int(np.sum([scipy.special.binom((self.N*self.N-self.N)/2,i) for i in range(0,self.n+1)]))
         else:
             self.M=uo_regions
+        
+        self.model = None
 
+        self.localLinearFns = [np.zeros((self.N,self.n)) for k in range(self.m)]
+        self.selectorSets = [[frozenset([])] for k in range(self.m)]
+
+    def setLocalLinearFns(self,localLinearFns):
+
+        assert len(localLinearFns) == self.m, 'Local linear functions must be specified for each output!'
+        for k in range(self.m):
+            assert localLinearFns[k][0].shape == (self.N,self.n) and localLinearFns[k][1].shape == (self.N,), 'Incorrect shape of local linear functions for output ' + str(k) + '!'
+        
+
+        self.localLinearFns = deepcopy(localLinearFns)
+        if self.model is not None:
+            for k in range(self.m):
+                self.setKerasLocalLinFns(self.localLinearFns[k][0].T, self.localLinearFns[k][1], out=k)
+
+    def setSelectorSets(self,selectorSets):
+
+        assert len(selectorSets) == self.m, 'Selector sets must be specified for each output!'
+        for k in range(self.m):
+            assert len(selectorSets[k]) <= self.M, 'Too many selector sets must be specified for output ' + str(k) + '!'
+        
+
+        self.selectorSets = deepcopy(selectorSets)
+        if self.model is not None:
+            for k in range(self.m):
+                sIdx = 0
+                for j in range(self.M):
+                    self.setKerasSelector(self.selectorMatKerasFromSet(self.selectorSets[k][sIdx]), j, out=k )
+                    if sIdx < len(self.selectorSets[k])-1:
+                        sIdx += 1
+
+    def createKeras(self, incBias=False, flat=False):
+        self.flat = flat
+        self.incBias = incBias
         inlayer = Input(shape=(self.n,))
 
         linearLayer = Dense(self.N * self.m)
@@ -94,8 +129,16 @@ class TLLnet:
 
         self.linearLayer = self.model.layers[1]
         self.selectorLayer = self.model.layers[2]
+
+        for k in range(self.m):
+            self.setKerasLocalLinFns(self.localLinearFns[k][0].T, self.localLinearFns[k][1],out=k)
+            sIdx = 0
+            for j in range(self.M):
+                self.setKerasSelector(self.selectorMatKerasFromSet(self.selectorSets[k][sIdx]), j, out=k)
+                if sIdx < len(self.selectorSets[k]) - 1:
+                    sIdx += 1
     
-    def setLocalLinFns(self, kern, bias, out=0):
+    def setKerasLocalLinFns(self, kern, bias, out=0):
         currWeights = self.linearLayer.get_weights()
 
         currWeights[0][:, (out*self.N):((out+1)*self.N) ] = kern
@@ -103,7 +146,7 @@ class TLLnet:
 
         self.linearLayer.set_weights(currWeights)
     
-    def getLocalLinFns(self, out=0):
+    def getKerasLocalLinFns(self, out=0):
         currWeights = self.linearLayer.get_weights()
 
         return [ \
@@ -111,13 +154,13 @@ class TLLnet:
                 currWeights[1][ (out*self.N):((out+1)*self.N) ] \
             ]
     
-    def getAllLocalLinFns(self):
+    def getKerasAllLocalLinFns(self):
 
         return [ \
                 self.getLocalLinFns(out=k) for k in range(self.m) \
             ]
     
-    def setSelector(self, arr, idx, out=0):
+    def setKerasSelector(self, arr, idx, out=0):
         if idx >= self.M:
             raise ValueError('Specified index must be less than the number of UO Regions!')
 
@@ -128,7 +171,7 @@ class TLLnet:
 
         self.selectorLayer.set_weights(currWeights)
     
-    def setSelectorBroken(self, arr, idx, out=0):
+    def setKerasSelectorBroken(self, arr, idx, out=0):
         if idx >= self.M:
             raise ValueError('Specified index must be less than the number of UO Regions!')
 
@@ -139,7 +182,7 @@ class TLLnet:
 
         self.selectorLayer.set_weights(currWeights)
     
-    def getSelector(self, idx, out=0):
+    def getKerasSelector(self, idx, out=0):
         if idx >= self.M:
             raise ValueError('Specified index must be less than the number of UO Regions!')
 
@@ -147,13 +190,13 @@ class TLLnet:
 
         return currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ]
     
-    def getAllSelectors(self):
+    def getKerasAllSelectors(self):
 
         return [ \
                 [self.getSelector(j, out=k) for j in range(self.M)] for k in range(self.m) \
             ]
 
-    def selectorMatFromSet(self,actSet):
+    def selectorMatKerasFromSet(self,actSet):
         if len(actSet) == 0:
             raise ValueError('Please specify a non-empty set!')
         e = np.eye(self.N)
@@ -171,6 +214,9 @@ class TLLnet:
         if len(ext.shape)==1:
             ext = np.vstack([ext for i in range(self.n)])
         
+        self.localLinearFns = []
+        self.selectorSets = []
+        
         for out in range(self.m):
             kern = np.random.normal(loc=0, scale=scale/10, size=(self.n, self.N))
             bias = np.random.normal(loc=0, scale=scale, size=(self.N,))
@@ -180,7 +226,7 @@ class TLLnet:
             selMats = [[] for i in range(self.M)]
             selSets = [set([]) for i in range(self.M)]
             selSets[0] = intToSet( myRandSet(self.N) )
-            selMats[0] = self.selectorMatFromSet(selSets[0])
+            selMats[0] = self.selectorMatKerasFromSet(selSets[0])
             
             matCounter = 1
             itCnt = iterations
@@ -193,7 +239,7 @@ class TLLnet:
                         break
                 if valid:
                     selSets[matCounter] = candidateSet
-                    selMats[matCounter] = self.selectorMatFromSet(candidateSet)
+                    selMats[matCounter] = self.selectorMatKerasFromSet(candidateSet)
                     matCounter += 1
                 itCnt -= 1
 
@@ -209,9 +255,12 @@ class TLLnet:
                 selMats[k] = selMats[matCounter-1]
             # kern = np.diag(0.5*(ext[out][1]-ext[out][0])/np.max(np.abs(intersections),axis=0)) @ kern
             kern = scale * (np.max(np.abs(intersections))) * kern
-            self.setLocalLinFns(kern,bias,out=out)
-            for k in range(self.M):
-                self.setSelector(selMats[k],k,out=out)
+            self.localLinearFns.append([kern.T,bias])
+            self.selectorSets.append(selSets[0:matCounter])
+            if self.model is not None:
+                self.setKerasLocalLinFns(kern,bias,out=out)
+                for k in range(self.M):
+                    self.setKerasSelector(selMats[k],k,out=out)
             # print(intersections)
             
 
