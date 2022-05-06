@@ -157,7 +157,7 @@ class TLLnet:
     def getKerasAllLocalLinFns(self):
 
         return [ \
-                self.getLocalLinFns(out=k) for k in range(self.m) \
+                self.getKerasLocalLinFns(out=k) for k in range(self.m) \
             ]
     
     def setKerasSelector(self, arr, idx, out=0):
@@ -193,7 +193,7 @@ class TLLnet:
     def getKerasAllSelectors(self):
 
         return [ \
-                [self.getSelector(j, out=k) for j in range(self.M)] for k in range(self.m) \
+                [self.getKerasSelector(j, out=k) for j in range(self.M)] for k in range(self.m) \
             ]
 
     def selectorMatKerasFromSet(self,actSet):
