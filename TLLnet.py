@@ -24,7 +24,7 @@ class TLLnet:
         self.n=input_dim
         self.m=output_dim
         self.N=linear_fns
-        if uo_regions == None:
+        if uo_regions is None:
             self.M = int(np.sum([scipy.special.binom((self.N*self.N-self.N)/2,i) for i in range(0,self.n+1)]))
         else:
             self.M=uo_regions
