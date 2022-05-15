@@ -31,8 +31,8 @@ class TLLnet:
         
         self.model = None
 
-        self.localLinearFns = [np.zeros((self.N,self.n)) for k in range(self.m)]
-        self.selectorSets = [[frozenset([])] for k in range(self.m)]
+        self.localLinearFns = [[np.zeros((self.N,self.n)),np.zeros((self.N,))] for k in range(self.m)]
+        self.selectorSets = [[frozenset([0])] for k in range(self.m)]
 
     def setLocalLinearFns(self,localLinearFns):
 
