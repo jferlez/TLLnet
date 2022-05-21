@@ -83,71 +83,76 @@ class TLLnet:
     def createKeras(self, incBias=False, flat=False):
         self.flat = flat
         self.incBias = incBias
-        inlayer = Input(shape=(self.n,), dtype=self.dtypeKeras)
+        self.inlayer = Input(shape=(self.n,), dtype=self.dtypeKeras)
 
-        linearLayer = Dense(self.N * self.m, dtype=self.dtypeKeras)
-        selectorLayer = Dense(self.N*self.M*self.m,use_bias=incBias, dtype=self.dtypeKeras)
+        self.linearLayer = Dense(self.N * self.m, dtype=self.dtypeKeras)
+        self.selectorLayer = Dense(self.N*self.M*self.m,use_bias=incBias, dtype=self.dtypeKeras)
 
-        x = selectorLayer(linearLayer(inlayer))
+        x = self.selectorLayer(self.linearLayer(self.inlayer))
 
-        minMaxStartLayer = 3
+        self.minMaxStartLayer = 3
         if not flat:
             x = tf.keras.layers.Reshape( \
                     (self.m, self.M, self.N) if self.m > 1 else (self.M, self.N) \
                 )( \
-                    selectorLayer(linearLayer(inlayer)) \
+                    self.selectorLayer(self.linearLayer(self.inlayer)) \
                 )
-            minMaxStartLayer = 4
+            self.minMaxStartLayer = 4
         
-        lays = []
+        self.lays = []
 
+        bankIdx = 0
         reduc = self.N
         while reduc > 1:
-            mm = MinMaxBankByN(self.M, reduc, self.m, maxQ=False, incBias=incBias,flat=flat, dtypeKeras=self.dtypeKeras)
-            lays.append(mm)
+            mm = MinMaxBankByN(self.M, reduc, self.m, maxQ=False, incBias=incBias,flat=flat, dtypeKeras=self.dtypeKeras, layerIdx=bankIdx)
+            self.lays.append(mm)
             reduc = int(mm[1]/(self.m*self.M)) if flat else mm[1]
             x = mm[0][1](mm[0][0](x))
+            bankIdx += 1
 
         if not flat:
             x = tf.keras.layers.Reshape( \
                     (self.m, self.M) if self.m > 1 else (self.M,), \
                     dtype=self.dtypeKeras \
                 )(x)
-            lays.append(())
+            self.lays.append(())
 
+        bankIdx = 0
         reduc = self.M
         while reduc > 1:
-            mm = MinMaxBankByN(groupSize=reduc,outputDim=self.m, incBias=incBias, flat=flat, dtypeKeras=self.dtypeKeras)
-            lays.append(mm)
+            mm = MinMaxBankByN(groupSize=reduc,outputDim=self.m, incBias=incBias, flat=flat, dtypeKeras=self.dtypeKeras, layerIdx=bankIdx)
+            self.lays.append(mm)
             reduc = int(mm[1]/self.m) if flat else mm[1]
             x = mm[0][1](mm[0][0](x))
+            bankIdx += 1
         
 
         if not flat:
             x = tf.keras.layers.Reshape((self.m,), dtype=self.dtypeKeras)(x)
-            
+        
+        self.outputLayer = x
 
-        self.model = Model(inputs=inlayer, outputs=x)
+        self.model = Model(inputs=self.inlayer, outputs=self.outputLayer)
 
-        for i in range(len(lays)):
-            if len(lays[i]) == 0:
+        for i in range(len(self.lays)):
+            if len(self.lays[i]) == 0:
                 # When we need to skip a Reshape layer, we need to add 1 to the 'effective' layer index.
                 # Since we're going two *actual* layers at a time for each element in lays, the offset is -2+1 = -1.
                 # (This is because we have the 2*i in the 'effective' layer index calculation.)
                 minMaxStartLayer = minMaxStartLayer-1
                 continue
             if incBias:
-                self.model.layers[minMaxStartLayer+2*i].set_weights([lays[i][2],0.*self.model.layers[minMaxStartLayer+2*i].get_weights()[1]])
-                self.model.layers[minMaxStartLayer+2*i+1].set_weights([lays[i][3],0.*self.model.layers[minMaxStartLayer+2*i+1].get_weights()[1]])
+                self.model.layers[self.minMaxStartLayer+2*i].set_weights([self.lays[i][2],0.*self.model.layers[self.minMaxStartLayer+2*i].get_weights()[1]])
+                self.model.layers[self.minMaxStartLayer+2*i+1].set_weights([self.lays[i][3],0.*self.model.layers[self.minMaxStartLayer+2*i+1].get_weights()[1]])
             else:
-                self.model.layers[minMaxStartLayer+2*i].set_weights([lays[i][2]])
-                self.model.layers[minMaxStartLayer+2*i+1].set_weights([lays[i][3]])
+                self.model.layers[self.minMaxStartLayer+2*i].set_weights([self.lays[i][2]])
+                self.model.layers[self.minMaxStartLayer+2*i+1].set_weights([self.lays[i][3]])
         
         if incBias:
             self.model.layers[2].set_weights( [self.model.layers[2].get_weights()[0], 0.*self.model.layers[2].get_weights()[1] ] )
 
-        self.linearLayer = self.model.layers[1]
-        self.selectorLayer = self.model.layers[2]
+        # self.linearLayer = self.model.layers[1]
+        # self.selectorLayer = self.model.layers[2]
 
         for k in range(self.m):
             self.setKerasLocalLinFns(self.localLinearFns[k][0].T, self.localLinearFns[k][1],out=k)
@@ -310,7 +315,7 @@ def intToSet(input_int):
         intCopy = intCopy >> 1
     return frozenset(output_list)
 
-def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,flat=False, dtypeKeras=tfDataType):
+def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,flat=False, dtypeKeras=tfDataType, layerIdx=None):
 
     if dtypeKeras == tf.float64:
         dtypeNpKeras = np.float64
@@ -367,9 +372,10 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
         compLayerKernel = np.kron(np.eye(numGroups*outputDim,dtype=int),compLayerKernel)
         outLayerKernel = np.kron(np.eye(numGroups*outputDim,dtype=int),outLayerKernel)
 
-    compLayer = Dense(compLayerKernel.shape[1],use_bias=incBias,trainable=False,activation='relu',input_shape=shapeTuple,dtype=dtypeKeras)
+    nameStr = layerIdx if layerIdx is None else ('max' if maxQ else 'min') + 'Bank' + str(layerIdx)
+    compLayer = Dense(compLayerKernel.shape[1],use_bias=incBias,trainable=False,activation='relu',input_shape=shapeTuple,dtype=dtypeKeras,name=(nameStr if nameStr is None else nameStr + '_0'))
 
-    outLayer = Dense(outLayerKernel.shape[1],use_bias=incBias,trainable=False,dtype=dtypeKeras)
+    outLayer = Dense(outLayerKernel.shape[1],use_bias=incBias,trainable=False,dtype=dtypeKeras,name=(nameStr if nameStr is None else nameStr + '_1'))
 
     return ((compLayer,outLayer),outLayerKernel.shape[1],compLayerKernel,outLayerKernel)
 
