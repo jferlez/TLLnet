@@ -55,7 +55,7 @@ class TLLnet:
 
         assert len(selectorSets) == self.m, 'Selector sets must be specified for each output!'
         for k in range(self.m):
-            assert len(selectorSets[k]) <= self.M, 'Too many selector sets must be specified for output ' + str(k) + '!'
+            assert len(selectorSets[k]) <= self.M, 'Too many selector sets specified for output ' + str(k) + '!'
         
 
         self.selectorSets = deepcopy(selectorSets)
