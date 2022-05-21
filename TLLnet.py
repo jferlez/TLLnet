@@ -85,8 +85,8 @@ class TLLnet:
         self.incBias = incBias
         self.inlayer = Input(shape=(self.n,), dtype=self.dtypeKeras)
 
-        self.linearLayer = Dense(self.N * self.m, dtype=self.dtypeKeras)
-        self.selectorLayer = Dense(self.N*self.M*self.m,use_bias=incBias, dtype=self.dtypeKeras)
+        self.linearLayer = Dense(self.N * self.m, dtype=self.dtypeKeras, name='linearLayer')
+        self.selectorLayer = Dense(self.N*self.M*self.m,use_bias=incBias, dtype=self.dtypeKeras, name='selectionLayer')
 
         x = self.selectorLayer(self.linearLayer(self.inlayer))
 
