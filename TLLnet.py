@@ -12,10 +12,20 @@ import scipy
 import re
 from functools import reduce
 from copy import deepcopy
+import re
 
 npDataType = np.float64
 tfDataType = tf.float64
 # K.set_floatx('float64')
+
+onnxAvailable = True
+try:
+    import tf2onnx
+    import onnx
+    import onnxruntime as rt
+except ImportError:
+    print('WARNING: tf2onnx or onnxruntime are unavailable. Exporting TLL to ONNX will be unavailable.')
+    onnxAvailable = False
 
 
 class TLLnet:
@@ -286,7 +296,60 @@ class TLLnet:
                 for k in range(self.M):
                     self.setKerasSelector(selMats[k],k,out=out)
             # print(intersections)
-            
+    
+    def exportONNX(self,fname=None):
+        if not onnxAvailable:
+            print('ONNX is unavailable.')
+            return
+        
+        if self.model is None:
+            self.createKeras()
+
+        if not self.incBias or not self.flat:
+            print('ONNX export requires that createKeras() be called with options: incBias=True, flat=True.\nPlease re-create Keras model with these options...')
+            return
+        
+        dummyBias = 1.0
+
+        # Set a non-zero bias on the selection/minBank/maxBank layers, so that the biases survive the ONNX conversion
+        wts = self.selectorLayer.get_weights()
+        self.selectorLayer.set_weights([wts[0],dummyBias*np.ones(wts[1].shape,dtype=self.dtypeNpKeras)])
+
+        for lyr in self.lays:
+            if len(lyr) > 0 and len(lyr[0]) == 2:
+                for l in lyr[0]:
+                    wts = l.get_weights()
+                    l.set_weights([wts[0], dummyBias*np.ones(wts[1].shape,dtype=self.dtypeNpKeras)])
+        
+
+        # Convert the Keras model to ONNX
+        self.onnxModel, _ = tf2onnx.convert.from_keras(self.model, input_signature=(tf.TensorSpec((None, self.n), self.dtypeKeras, name="input"),), opset=13, output_path='test.onnx')
+
+        # This is made available to help using the ONNX runtime to verify the output of the ONNX:
+        self.onnxOutputs = [out.name for out in self.onnxModel.graph.output]
+
+        # Change all of the selection/minBank/maxBank biases to zero in the exported ONNX:
+        for i in self.onnxModel.graph.initializer:
+            if re.search(r'.*(selectionLayer|minBank|maxBank)[_\d]*/BiasAdd',i.name):
+                i.raw_data =  onnx.numpy_helper.from_array( np.zeros_like(onnx.numpy_helper.to_array(i)) ).raw_data
+
+
+        # Reset the biases to zero in the Keras model
+        wts = self.selectorLayer.get_weights()
+        self.selectorLayer.set_weights([wts[0], np.zeros(wts[1].shape,dtype=self.dtypeNpKeras)])
+
+        for lyr in self.lays:
+            if len(lyr) > 0 and len(lyr[0]) == 2:
+                for l in lyr[0]:
+                    wts = l.get_weights()
+                    l.set_weights([wts[0], np.zeros(wts[1].shape,dtype=self.dtypeNpKeras)])
+
+        if fname is not None:
+            onnx.save(self.onnxModel, fname)
+
+
+        
+
 
 def myRandSet(N):
     if N <= 63:
