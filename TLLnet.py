@@ -15,12 +15,25 @@ from copy import deepcopy
 
 npDataType = np.float64
 tfDataType = tf.float64
-K.set_floatx('float64')
+# K.set_floatx('float64')
 
 
 class TLLnet:
 
-    def __init__(self, input_dim=1, output_dim=1, linear_fns=1, uo_regions=None):
+    def __init__(self, input_dim=1, output_dim=1, linear_fns=1, uo_regions=None, dtype=npDataType, dtypeKeras=tfDataType):
+        self.dtype = dtype
+        self.dtypeKeras = dtypeKeras
+
+        if dtype != dtypeKeras:
+            print('\n\nWARNING: TLL created with different internal datatype (' + str(dtype) + ') and Keras datatype (' + str(dtypeKeras) + ')\n\n')
+
+        if self.dtypeKeras == tf.float64:
+            self.dtypeNpKeras = np.float64
+        elif self.dtypeKeras == tf.float32:
+            self.dtypeNpKeras = np.float32
+        else:
+            self.dtypeNpKeras = np.float64
+
         assert type(input_dim) == int and input_dim >= 1 , 'input_dim must be an integer >=1.'
         assert type(output_dim) == int and output_dim >= 1 , 'output_dim must be an integer >=1.'
         assert type(linear_fns) == int and linear_fns >= 1 , 'linear_fns must be an integer >=1.'
@@ -70,10 +83,10 @@ class TLLnet:
     def createKeras(self, incBias=False, flat=False):
         self.flat = flat
         self.incBias = incBias
-        inlayer = Input(shape=(self.n,))
+        inlayer = Input(shape=(self.n,), dtype=self.dtypeKeras)
 
-        linearLayer = Dense(self.N * self.m)
-        selectorLayer = Dense(self.N*self.M*self.m,use_bias=incBias)
+        linearLayer = Dense(self.N * self.m, dtype=self.dtypeKeras)
+        selectorLayer = Dense(self.N*self.M*self.m,use_bias=incBias, dtype=self.dtypeKeras)
 
         x = selectorLayer(linearLayer(inlayer))
 
@@ -90,27 +103,28 @@ class TLLnet:
 
         reduc = self.N
         while reduc > 1:
-            mm = MinMaxBankByN(self.M, reduc, self.m, maxQ=False, incBias=incBias,flat=flat)
+            mm = MinMaxBankByN(self.M, reduc, self.m, maxQ=False, incBias=incBias,flat=flat, dtypeKeras=self.dtypeKeras)
             lays.append(mm)
             reduc = int(mm[1]/(self.m*self.M)) if flat else mm[1]
             x = mm[0][1](mm[0][0](x))
 
         if not flat:
             x = tf.keras.layers.Reshape( \
-                    (self.m, self.M) if self.m > 1 else (self.M,) \
+                    (self.m, self.M) if self.m > 1 else (self.M,), \
+                    dtype=self.dtypeKeras \
                 )(x)
             lays.append(())
 
         reduc = self.M
         while reduc > 1:
-            mm = MinMaxBankByN(groupSize=reduc,outputDim=self.m, incBias=incBias, flat=flat)
+            mm = MinMaxBankByN(groupSize=reduc,outputDim=self.m, incBias=incBias, flat=flat, dtypeKeras=self.dtypeKeras)
             lays.append(mm)
             reduc = int(mm[1]/self.m) if flat else mm[1]
             x = mm[0][1](mm[0][0](x))
         
 
         if not flat:
-            x = tf.keras.layers.Reshape((self.m,))(x)
+            x = tf.keras.layers.Reshape((self.m,), dtype=self.dtypeKeras)(x)
             
 
         self.model = Model(inputs=inlayer, outputs=x)
@@ -146,8 +160,8 @@ class TLLnet:
     def setKerasLocalLinFns(self, kern, bias, out=0):
         currWeights = self.linearLayer.get_weights()
 
-        currWeights[0][:, (out*self.N):((out+1)*self.N) ] = kern
-        currWeights[1][ (out*self.N):((out+1)*self.N) ] = bias
+        currWeights[0][:, (out*self.N):((out+1)*self.N) ] = kern.astype(self.dtypeNpKeras)
+        currWeights[1][ (out*self.N):((out+1)*self.N) ] = bias.astype(self.dtypeNpKeras)
 
         self.linearLayer.set_weights(currWeights)
     
@@ -155,8 +169,8 @@ class TLLnet:
         currWeights = self.linearLayer.get_weights()
 
         return [ \
-                currWeights[0][:, (out*self.N):((out+1)*self.N) ], \
-                currWeights[1][ (out*self.N):((out+1)*self.N) ] \
+                currWeights[0][:, (out*self.N):((out+1)*self.N) ].astype(self.dtype), \
+                currWeights[1][ (out*self.N):((out+1)*self.N) ].astype(self.dtype) \
             ]
     
     def getKerasAllLocalLinFns(self):
@@ -171,8 +185,8 @@ class TLLnet:
 
         currWeights = self.selectorLayer.get_weights()
 
-        currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = np.zeros((self.m*self.N,self.N))
-        currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = arr
+        currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = np.zeros((self.m*self.N,self.N),dtype=self.dtypeNpKeras)
+        currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = arr.astype(self.dtypeNpKeras)
 
         self.selectorLayer.set_weights(currWeights)
     
@@ -182,8 +196,8 @@ class TLLnet:
 
         currWeights = self.selectorLayer.get_weights()
 
-        currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = np.zeros((self.m*self.N,self.N))
-        currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = arr
+        currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = np.zeros((self.m*self.N,self.N),dtype=self.dtypeNpKeras)
+        currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = arr.astype(self.dtypeNpKeras)
 
         self.selectorLayer.set_weights(currWeights)
     
@@ -193,7 +207,7 @@ class TLLnet:
 
         currWeights = self.selectorLayer.get_weights()
 
-        return currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ]
+        return currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ].astype(self.dtype)
     
     def getKerasAllSelectors(self):
 
@@ -204,8 +218,8 @@ class TLLnet:
     def selectorMatKerasFromSet(self,actSet):
         if len(actSet) == 0:
             raise ValueError('Please specify a non-empty set!')
-        e = np.eye(self.N)
-        ret = np.zeros((self.N,self.N))
+        e = np.eye(self.N,dtype=self.dtype)
+        ret = np.zeros((self.N,self.N),dtype=self.dtype)
         insertCounter = 0
         for i in actSet:
             ret[:,insertCounter] = e[:,i]
@@ -223,10 +237,10 @@ class TLLnet:
         self.selectorSets = []
         
         for out in range(self.m):
-            kern = np.random.normal(loc=0, scale=scale/10, size=(self.n, self.N))
-            bias = np.random.normal(loc=0, scale=scale, size=(self.N,))
+            kern = np.random.normal(loc=0, scale=scale/10, size=(self.n, self.N)).astype(self.dtype)
+            bias = np.random.normal(loc=0, scale=scale, size=(self.N,)).astype(self.dtype)
             
-            idxs = np.array([ i for i in range(self.N) ])
+            idxs = np.array([ i for i in range(self.N) ], dtype=self.dtype)
             
             selMats = [[] for i in range(self.M)]
             selSets = [set([]) for i in range(self.M)]
@@ -296,7 +310,14 @@ def intToSet(input_int):
         intCopy = intCopy >> 1
     return frozenset(output_list)
 
-def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,flat=False):
+def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,flat=False, dtypeKeras=tfDataType):
+
+    if dtypeKeras == tf.float64:
+        dtypeNpKeras = np.float64
+    elif dtypeKeras == tf.float32:
+        dtypeNpKeras = np.float32
+    else:
+        dtypeNpKeras = np.float64
 
     if groupSize==1:
         raise ValueError('groupSize argument must be >1 (no min/max needed otherwise!)')
@@ -304,9 +325,9 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
     odd = np.mod(groupSize,2)==1
 
     if maxQ:
-        finalWeights = np.array([0.5,-0.5,0.5,0.5],npDataType)
+        finalWeights = np.array([0.5,-0.5,0.5,0.5],dtype=dtypeNpKeras)
     else:
-        finalWeights = np.array([0.5,-0.5,-0.5,-0.5],npDataType)
+        finalWeights = np.array([0.5,-0.5,-0.5,-0.5],dtype=dtypeNpKeras)
     
 
     if outputDim > 1:
@@ -327,14 +348,14 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
 
     numMins = int((groupSize-1)/2 if odd else groupSize/2)
 
-    compLayerKernel = np.zeros((groupSize,4*(numMins + 1) if odd else 4*numMins),npDataType)
+    compLayerKernel = np.zeros((groupSize,4*(numMins + 1) if odd else 4*numMins),dtype=dtypeNpKeras)
 
     for k in range(numMins):
-        compLayerKernel[2*k:2*k+2, 4*k:4*(k+1)] = np.array([[1,1],[-1,-1],[-1,1],[1,-1]],npDataType).T
+        compLayerKernel[2*k:2*k+2, 4*k:4*(k+1)] = np.array([[1,1],[-1,-1],[-1,1],[1,-1]],dtype=dtypeNpKeras).T
     # Compares the last two elements of the block, even though one of them alread
     # appears in another comparison
     if odd:
-        compLayerKernel[groupSize-2:groupSize,compLayerKernel.shape[1]-4:compLayerKernel.shape[1]] = np.array([[1,1],[-1,-1],[-1,1],[1,-1]],npDataType).T
+        compLayerKernel[groupSize-2:groupSize,compLayerKernel.shape[1]-4:compLayerKernel.shape[1]] = np.array([[1,1],[-1,-1],[-1,1],[1,-1]],dtype=dtypeNpKeras).T
     
     outLayerKernel = np.zeros((compLayerKernel.shape[1], numMins + 1 if odd else numMins))
 
@@ -346,9 +367,9 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
         compLayerKernel = np.kron(np.eye(numGroups*outputDim,dtype=int),compLayerKernel)
         outLayerKernel = np.kron(np.eye(numGroups*outputDim,dtype=int),outLayerKernel)
 
-    compLayer = Dense(compLayerKernel.shape[1],use_bias=incBias,trainable=False,activation='relu',input_shape=shapeTuple)
+    compLayer = Dense(compLayerKernel.shape[1],use_bias=incBias,trainable=False,activation='relu',input_shape=shapeTuple,dtype=dtypeKeras)
 
-    outLayer = Dense(outLayerKernel.shape[1],use_bias=incBias,trainable=False)
+    outLayer = Dense(outLayerKernel.shape[1],use_bias=incBias,trainable=False,dtype=dtypeKeras)
 
     return ((compLayer,outLayer),outLayerKernel.shape[1],compLayerKernel,outLayerKernel)
 
