@@ -180,18 +180,21 @@ class TLLnet:
 
         self.linearLayer.set_weights(currWeights)
     
-    def getKerasLocalLinFns(self, out=0):
+    def getKerasLocalLinFns(self, out=0, transpose=False):
         currWeights = self.linearLayer.get_weights()
 
-        return [ \
+        retWeights = [ \
                 currWeights[0][:, (out*self.N):((out+1)*self.N) ].astype(self.dtype), \
                 currWeights[1][ (out*self.N):((out+1)*self.N) ].astype(self.dtype) \
             ]
+        if transpose:
+            retWeights[0] = retWeights[0].T
+        return retWeights
     
-    def getKerasAllLocalLinFns(self):
+    def getKerasAllLocalLinFns(self, transpose=False):
 
         return [ \
-                self.getKerasLocalLinFns(out=k) for k in range(self.m) \
+                self.getKerasLocalLinFns(out=k,transpose=transpose) for k in range(self.m) \
             ]
     
     def setKerasSelector(self, arr, idx, out=0):
