@@ -538,14 +538,14 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
 
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     
-    # mxnet = MinMaxBankByN(numGroups=2,groupSize=3,outputDim=2)
+#     # mxnet = MinMaxBankByN(numGroups=2,groupSize=3,outputDim=2)
 
-    # x = TLLnet(input_dim=1, output_dim=2, linear_fns=10)
+#     # x = TLLnet(input_dim=1, output_dim=2, linear_fns=10)
 
-    # t2 = TLLnet(input_dim=1, output_dim=1, linear_fns=5, uo_regions=25)
+#     # t2 = TLLnet(input_dim=1, output_dim=1, linear_fns=5, uo_regions=25)
 
-    tFlat = TLLnet(input_dim=3,output_dim=2,linear_fns=5,uo_regions=29,incBias=True,flat=True)
+#     tFlat = TLLnet(input_dim=3,output_dim=2,linear_fns=5,uo_regions=29,incBias=True,flat=True)
 
-    print('done')
+#     print('done')
