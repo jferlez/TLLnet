@@ -69,7 +69,7 @@ class TLLnet:
             assert localLinearFns[k][0].shape == (self.N,self.n) and localLinearFns[k][1].shape == (self.N,), 'Incorrect shape of local linear functions for output ' + str(k) + '!'
         
 
-        self.localLinearFns = deepcopy(localLinearFns)
+        self.localLinearFns = [[x[0].astype(dtype=self.dtype), x[1].astype(dtype=self.dtype)] for x in localLinearFns]
         if self.model is not None:
             for k in range(self.m):
                 self.setKerasLocalLinFns(self.localLinearFns[k][0].T, self.localLinearFns[k][1], out=k)
@@ -351,7 +351,96 @@ class TLLnet:
             onnx.save(self.onnxModel, fname)
 
 
+
+class TLLnetFromONNX(TLLnet):
+
+    def __init__(self, onnxFile, dtype=npDataType):
+
+        importONNXModel = onnx.load(onnxFile)
+
+        assert len(importONNXModel.graph.node) >= 8, 'ERROR: Cannot be a TLL network with fewer than eight layers.'
+
+        assert importONNXModel.graph.node[-1].op_type == 'Add', 'ERROR: TLL layer -1 must be an Add layer.'
+        assert importONNXModel.graph.node[-2].op_type == 'MatMul', 'ERROR: TLL layer -1 must be a MatMul layer.'
+        assert importONNXModel.graph.node[0].op_type == 'MatMul', 'ERROR: TLL layer 0 must be a MatMul layer.'
+        assert importONNXModel.graph.node[1].op_type == 'Add', 'ERROR: TLL layer 1 must be an Add layer.'
+        assert importONNXModel.graph.node[2].op_type == 'MatMul', 'ERROR: TLL layer 2 must be a MatMul layer.'
+
+        importONNXDict = createONNXDict(importONNXModel)
+
+        m = importONNXDict[importONNXModel.graph.node[-2].name]['dims'][1]
+        n = importONNXDict[importONNXModel.graph.node[0].name]['dims'][0]
+        N = importONNXDict[importONNXModel.graph.node[0].name]['dims'][1]//m
+
+        assert N*m == importONNXDict[importONNXModel.graph.node[0].name]['dims'][1], 'ERROR: TLL layer 0 must have outputs == N * m'
+
+        M = importONNXDict[importONNXModel.graph.node[2].name]['dims'][1]//(m*N)
+
+        assert M*m*N == importONNXDict[importONNXModel.graph.node[2].name]['dims'][1], 'ERROR: TLL layer 2 must have outputs M * m * N'
+
+        dtypeNpKeras = onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[0].name]['initializer']).dtype
+        if dtypeNpKeras == np.float32:
+            dtypeKeras = tf.float32
+        else:
+            dtypeKeras = tf.float64
+
+        super().__init__(input_dim=n, output_dim=m, linear_fns=N, uo_regions=M, dtype=dtype, dtypeKeras=dtypeKeras)
+
+        self.createKeras(incBias=True,flat=True)
+
+        self.linearLayer.set_weights( \
+            [ \
+                onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[0].name]['initializer']), \
+                onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[1].name]['initializer'])
+            ] \
+        )
+
+        self.selectorLayer.set_weights( \
+            [ \
+                onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[2].name]['initializer']), \
+                onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[3].name]['initializer'])
+            ] \
+        )
+        sSets = [[] for k in range(m)]
+        for k in range(m):
+            for j in range(M):
+                s = np.nonzero(self.getKerasSelector(j,out=k))
+                assert set(s[1]) == set(range(N)) and np.all(self.getKerasSelector(j,out=k)[s] == 1), 'ERROR: TLL layer 2 must contain valid selector matrices.'
+                sSets[k].append(set(s[0]))
         
+        self.setLocalLinearFns(self.getKerasAllLocalLinFns(transpose=True))
+        self.setSelectorSets(sSets)
+
+        self.exportONNX()
+
+        validTLLONNXDict = createONNXDict(self.onnxModel)
+
+        assert len(self.onnxModel.graph.node) == len(importONNXModel.graph.node) \
+            and len(self.onnxModel.graph.initializer) == len(importONNXModel.graph.initializer), 'ERROR: Incorrect number of layers for a TLL'
+        
+        for ndIdx in range(len(importONNXModel.graph.node)):
+            assert importONNXModel.graph.node[ndIdx].op_type == self.onnxModel.graph.node[ndIdx].op_type, 'ERROR: TLL layer type mismatch for layer ' + str(ndIdx)
+            if importONNXModel.graph.node[ndIdx].name in importONNXDict and self.onnxModel.graph.node[ndIdx].name in validTLLONNXDict:
+                assert np.array_equal(onnx.numpy_helper.to_array( importONNXDict[importONNXModel.graph.node[ndIdx].name]['initializer'] ), \
+                                        onnx.numpy_helper.to_array( validTLLONNXDict[self.onnxModel.graph.node[ndIdx].name]['initializer'] ) ), \
+                            'ERROR: TLL layer weights mismatch for layer ' + str(ndIdx)
+            
+
+
+
+def createONNXDict(onnxModel):
+    weightsDict = {}
+    for inst in onnxModel.graph.initializer:
+        if re.search( r'^.*/ReadVariableOp:0', inst.name ):
+            name = inst.name[0:-17]
+            weightsDict[name] = {'raw_data':inst.raw_data, 'dims':inst.dims, 'data_type':inst.data_type, 'initializer':inst}
+    
+    for ndIdx in range(len(onnxModel.graph.node)):
+        if onnxModel.graph.node[ndIdx].name in weightsDict:
+            weightsDict[onnxModel.graph.node[ndIdx].name]['op_type'] = onnxModel.graph.node[ndIdx].op_type
+            weightsDict[onnxModel.graph.node[ndIdx].name]['node_idx'] = ndIdx
+
+    return weightsDict 
 
 
 def myRandSet(N):
@@ -444,7 +533,6 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
     outLayer = Dense(outLayerKernel.shape[1],use_bias=incBias,trainable=False,dtype=dtypeKeras,name=(nameStr if nameStr is None else nameStr + '_1'))
 
     return ((compLayer,outLayer),outLayerKernel.shape[1],compLayerKernel,outLayerKernel)
-
 
 
 
