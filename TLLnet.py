@@ -301,9 +301,7 @@ class TLLnet:
             # print(intersections)
     
     def exportONNX(self,fname=None):
-        if not onnxAvailable:
-            print('ONNX is unavailable.')
-            return
+        assert onnxAvailable, 'ONNX is unavailable.'
         
         if self.model is None:
             self.createKeras()
@@ -355,6 +353,8 @@ class TLLnet:
 class TLLnetFromONNX(TLLnet):
 
     def __init__(self, onnxFile, dtype=npDataType):
+
+        assert onnxAvailable, 'ONNX is unavailable.'
 
         importONNXModel = onnx.load(onnxFile)
 
