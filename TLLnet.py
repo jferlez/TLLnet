@@ -13,6 +13,7 @@ import re
 from functools import reduce
 from copy import deepcopy
 import re
+import pickle
 
 npDataType = np.float64
 tfDataType = tf.float64
@@ -347,6 +348,63 @@ class TLLnet:
 
         if fname is not None:
             onnx.save(self.onnxModel, fname)
+    
+    def save(self, fname):
+        saveDict = {}
+        saveDict['TLLFormatVersion'] = '0.1.0'
+        props = ['n','N','M','m','localLinearFns','selectorSets']
+        for p in props:
+            saveDict[p] = getattr(self,p)
+        with open(fname,'wb') as fp:
+            pickle.dump(saveDict,fp)
+
+    @classmethod
+    def fromTLLFormat(cls, tllfile, dtypeKeras=tfDataType):
+        if type(tllfile) != dict:
+            with open(tllfile, 'rb') as fp:
+                tllDict = pickle.load(fp)
+        else:
+            tllDict = tllfile
+            tllfile = 'Input dictionary'
+        props = ['n','N','M','m','localLinearFns','selectorSets','TLLFormatVersion']
+        if not all([p in tllDict for p in props]):
+            raise(TypeError(f'{tllFile} does not contain a valid TLL Format. One or more properties are missing.'))
+        props.remove('TLLFormatVersion')
+        props.remove('localLinearFns')
+        props.remove('selectorSets')
+        for p in props:
+            if type(tllDict[p]) != int or tllDict[p] < 0:
+                raise(TypeError(f'{tllfile} does not contain a valid TLL format. {p} should be an integer > 0.'))
+        for p in ['localLinearFns', 'selectorSets']:
+            if len(tllDict[p]) != tllDict['m']:
+                raise(TypeError(f'{tllfile} does not contain a valid TLL format. {p} should be a list of length {tllDict["m"]}'))
+        
+        dtype = None
+        shp = {0:(tllDict['N'], tllDict['n']), 1:(tllDict['N'],) }
+        for j in range(tllDict['m']):
+            if type(tllDict['localLinearFns'][j]) != list or len(tllDict['localLinearFns'][j]) != 2:
+                raise(TypeError(f'{tllfile} does not contain a valid TLL format. Element {j} of \'localLinearFns\' should be a list of length 2.'))
+            for k in [0,1]:
+                if type(tllDict['localLinearFns'][j][k]) != np.ndarray or tllDict['localLinearFns'][j][k].shape != shp[k]:
+                    raise(TypeError(f'{tllfile} does not contain a valid TLL format. \'localLinearFns\' property should be a NumPy of shape {shp[k]}'))
+                if j == 0 and k == 0:
+                    dtype = tllDict['localLinearFns'][j][k].dtype
+                if tllDict['localLinearFns'][j][k].dtype != dtype:
+                    raise(TypeError(f'{tllfile} does not contain a valid TLL format. \'localLinearFns\' NumPy arrays should not be of different data types.'))
+            if type(tllDict['selectorSets'][j]) != list or len(tllDict['selectorSets'][j]) == 0:
+                raise(TypeError(f'{tllfile} does not contain a valid TLL format. Element {j} of proptery \'selectorSets\' should be a list of length at least 1.'))
+            for k in range(len(tllDict['selectorSets'][j])):
+                if type(tllDict['selectorSets'][j][k]) != set \
+                            or any([type(el) != int for el in tllDict['selectorSets'][j][k]]) \
+                            or min(tllDict['selectorSets'][j][k]) < 0 \
+                            or max(tllDict['selectorSets'][j][k]) >= tllDict['N']:
+                        raise(TypeError(f'{tllfile} does not contain a valid TLL format. Selector set {k} for output {j} should be a set of integers between 0 and {tllDict["N"]-1}'))
+                    
+        tll = cls(input_dim=tllDict['n'], output_dim=tllDict['m'], linear_fns=tllDict['N'], uo_regions=tllDict['M'], dtype=dtype, dtypeKeras=dtypeKeras)
+        tll.setLocalLinearFns(tllDict['localLinearFns'])
+        tll.setSelectorSets(tllDict['selectorSets'])
+
+        return tll
 
 
     @classmethod
@@ -423,9 +481,12 @@ class TLLnet:
                             'ERROR: TLL layer weights mismatch for layer ' + str(ndIdx)
         
         return tll
-            
 
 
+
+# *********************************
+# *      Helper functions:        *
+# *********************************
 
 def createONNXDict(onnxModel):
     weightsDict = {}
