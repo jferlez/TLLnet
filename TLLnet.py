@@ -349,11 +349,8 @@ class TLLnet:
             onnx.save(self.onnxModel, fname)
 
 
-
-class TLLnetFromONNX(TLLnet):
-
-    def __init__(self, onnxFile, dtype=npDataType):
-
+    @classmethod
+    def fromONNX(cls, onnxFile, dtype=npDataType):
         assert onnxAvailable, 'ONNX is unavailable.'
 
         importONNXModel = onnx.load(onnxFile)
@@ -384,18 +381,18 @@ class TLLnetFromONNX(TLLnet):
         else:
             dtypeKeras = tf.float64
 
-        super().__init__(input_dim=n, output_dim=m, linear_fns=N, uo_regions=M, dtype=dtype, dtypeKeras=dtypeKeras)
+        tll = cls(input_dim=n, output_dim=m, linear_fns=N, uo_regions=M, dtype=dtype, dtypeKeras=dtypeKeras)
 
-        self.createKeras(incBias=True,flat=True)
+        tll.createKeras(incBias=True,flat=True)
 
-        self.linearLayer.set_weights( \
+        tll.linearLayer.set_weights( \
             [ \
                 onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[0].name]['initializer']), \
                 onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[1].name]['initializer'])
             ] \
         )
 
-        self.selectorLayer.set_weights( \
+        tll.selectorLayer.set_weights( \
             [ \
                 onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[2].name]['initializer']), \
                 onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[3].name]['initializer'])
@@ -404,26 +401,28 @@ class TLLnetFromONNX(TLLnet):
         sSets = [[] for k in range(m)]
         for k in range(m):
             for j in range(M):
-                s = np.nonzero(self.getKerasSelector(j,out=k))
-                assert set(s[1]) == set(range(N)) and np.all(self.getKerasSelector(j,out=k)[s] == 1), 'ERROR: TLL layer 2 must contain valid selector matrices.'
+                s = np.nonzero(tll.getKerasSelector(j,out=k))
+                assert set(s[1]) == set(range(N)) and np.all(tll.getKerasSelector(j,out=k)[s] == 1), 'ERROR: TLL layer 2 must contain valid selector matrices.'
                 sSets[k].append(set(s[0]))
         
-        self.setLocalLinearFns(self.getKerasAllLocalLinFns(transpose=True))
-        self.setSelectorSets(sSets)
+        tll.setLocalLinearFns(tll.getKerasAllLocalLinFns(transpose=True))
+        tll.setSelectorSets(sSets)
 
-        self.exportONNX()
+        tll.exportONNX()
 
-        validTLLONNXDict = createONNXDict(self.onnxModel)
+        validTLLONNXDict = createONNXDict(tll.onnxModel)
 
-        assert len(self.onnxModel.graph.node) == len(importONNXModel.graph.node) \
-            and len(self.onnxModel.graph.initializer) == len(importONNXModel.graph.initializer), 'ERROR: Incorrect number of layers for a TLL'
+        assert len(tll.onnxModel.graph.node) == len(importONNXModel.graph.node) \
+            and len(tll.onnxModel.graph.initializer) == len(importONNXModel.graph.initializer), 'ERROR: Incorrect number of layers for a TLL'
         
         for ndIdx in range(len(importONNXModel.graph.node)):
-            assert importONNXModel.graph.node[ndIdx].op_type == self.onnxModel.graph.node[ndIdx].op_type, 'ERROR: TLL layer type mismatch for layer ' + str(ndIdx)
-            if importONNXModel.graph.node[ndIdx].name in importONNXDict and self.onnxModel.graph.node[ndIdx].name in validTLLONNXDict:
+            assert importONNXModel.graph.node[ndIdx].op_type == tll.onnxModel.graph.node[ndIdx].op_type, 'ERROR: TLL layer type mismatch for layer ' + str(ndIdx)
+            if importONNXModel.graph.node[ndIdx].name in importONNXDict and tll.onnxModel.graph.node[ndIdx].name in validTLLONNXDict:
                 assert np.array_equal(onnx.numpy_helper.to_array( importONNXDict[importONNXModel.graph.node[ndIdx].name]['initializer'] ), \
-                                        onnx.numpy_helper.to_array( validTLLONNXDict[self.onnxModel.graph.node[ndIdx].name]['initializer'] ) ), \
+                                        onnx.numpy_helper.to_array( validTLLONNXDict[tll.onnxModel.graph.node[ndIdx].name]['initializer'] ) ), \
                             'ERROR: TLL layer weights mismatch for layer ' + str(ndIdx)
+        
+        return tll
             
 
 
