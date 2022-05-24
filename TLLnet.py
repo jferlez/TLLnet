@@ -25,7 +25,7 @@ try:
     import onnx
     import onnxruntime as rt
 except ImportError:
-    print('WARNING: tf2onnx or onnxruntime are unavailable. Exporting TLL to ONNX will be unavailable.')
+    print('WARNING: tf2onnx or onnxruntime are unavailable. Exporting TLL to ONNX will be unavailable. (This warning will not be repeated.)')
     onnxAvailable = False
 
 typeMismatchWarning = True
