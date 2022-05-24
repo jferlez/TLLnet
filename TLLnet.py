@@ -25,7 +25,7 @@ try:
     import onnx
     import onnxruntime as rt
 except ImportError:
-    print('WARNING: tf2onnx or onnxruntime are unavailable. Exporting TLL to ONNX will be unavailable. (This warning will not be repeated.)')
+    print('WARNING: tf2onnx or onnxruntime are unavailable. Exporting TLL to ONNX will be unavailable.')
     onnxAvailable = False
 
 typeMismatchWarning = True
@@ -33,11 +33,12 @@ typeMismatchWarning = True
 class TLLnet:
 
     def __init__(self, input_dim=1, output_dim=1, linear_fns=1, uo_regions=None, dtype=npDataType, dtypeKeras=tfDataType):
+        global typeMismatchWarning
         self.dtype = dtype
         self.dtypeKeras = dtypeKeras
 
         if dtype != dtypeKeras and typeMismatchWarning:
-            print('WARNING: TLL created with different internal datatype (' + str(dtype) + ') and Keras datatype (' + str(dtypeKeras) + ')')
+            print('WARNING: TLL created with different internal datatype (' + str(dtype) + ') and Keras datatype (' + str(dtypeKeras) + '); this warning will not be repeated.')
             typeMismatchWarning = False
 
         if self.dtypeKeras == tf.float64:
