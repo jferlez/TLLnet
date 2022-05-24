@@ -349,14 +349,16 @@ class TLLnet:
         if fname is not None:
             onnx.save(self.onnxModel, fname)
     
-    def save(self, fname):
+    def save(self, fname=None):
         saveDict = {}
         saveDict['TLLFormatVersion'] = '0.1.0'
         props = ['n','N','M','m','localLinearFns','selectorSets']
         for p in props:
             saveDict[p] = getattr(self,p)
-        with open(fname,'wb') as fp:
-            pickle.dump(saveDict,fp)
+        if fname is not None:
+            with open(fname,'wb') as fp:
+                pickle.dump(saveDict,fp)
+        return saveDict
 
     @classmethod
     def fromTLLFormat(cls, tllfile, dtypeKeras=tfDataType, validateFile=True):
