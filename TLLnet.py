@@ -325,7 +325,7 @@ class TLLnet:
         
 
         # Convert the Keras model to ONNX
-        self.onnxModel, _ = tf2onnx.convert.from_keras(self.model, input_signature=(tf.TensorSpec((None, self.n), self.dtypeKeras, name="input"),), opset=13, output_path='test.onnx')
+        self.onnxModel, _ = tf2onnx.convert.from_keras(self.model, input_signature=(tf.TensorSpec((None, self.n), self.dtypeKeras, name="input"),), opset=13)
 
         # This is made available to help using the ONNX runtime to verify the output of the ONNX:
         self.onnxOutputs = [out.name for out in self.onnxModel.graph.output]
