@@ -28,6 +28,7 @@ except ImportError:
     print('WARNING: tf2onnx or onnxruntime are unavailable. Exporting TLL to ONNX will be unavailable.')
     onnxAvailable = False
 
+typeMismatchWarning = True
 
 class TLLnet:
 
@@ -35,8 +36,9 @@ class TLLnet:
         self.dtype = dtype
         self.dtypeKeras = dtypeKeras
 
-        if dtype != dtypeKeras:
-            print('\n\nWARNING: TLL created with different internal datatype (' + str(dtype) + ') and Keras datatype (' + str(dtypeKeras) + ')\n\n')
+        if dtype != dtypeKeras and typeMismatchWarning:
+            print('WARNING: TLL created with different internal datatype (' + str(dtype) + ') and Keras datatype (' + str(dtypeKeras) + ')')
+            typeMismatchWarning = False
 
         if self.dtypeKeras == tf.float64:
             self.dtypeNpKeras = np.float64
