@@ -352,6 +352,13 @@ class TLLnet:
         if fname is not None:
             onnx.save(self.onnxModel, fname)
     
+    def toPythonIntSelectorSets(self):
+        for k in range(self.m):
+            for j in range(len(self.selectorSets[k])):
+                oldSelectorSet = self.selectorSets[k][j]
+                self.selectorSets[k][j] = set(list(map(lambda x: int(x),list(oldSelectorSet))))
+                assert self.selectorSets[k][j] == oldSelectorSet
+
     def save(self, fname=None):
         saveDict = {}
         saveDict['TLLFormatVersion'] = '0.1.0'
