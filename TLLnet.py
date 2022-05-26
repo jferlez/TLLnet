@@ -515,6 +515,8 @@ def createONNXDict(onnxModel):
 
     return weightsDict 
 
+def selectorMatrixToSet(sMat):
+    return set(list(map(lambda x: int(x), np.nonzero(sMat)[0].tolist())))
 
 def myRandSet(N):
     if N <= 63:
