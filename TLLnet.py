@@ -153,7 +153,7 @@ class TLLnet:
                 # When we need to skip a Reshape layer, we need to add 1 to the 'effective' layer index.
                 # Since we're going two *actual* layers at a time for each element in lays, the offset is -2+1 = -1.
                 # (This is because we have the 2*i in the 'effective' layer index calculation.)
-                minMaxStartLayer = minMaxStartLayer-1
+                self.minMaxStartLayer = self.minMaxStartLayer-1
                 continue
             if incBias:
                 self.model.layers[self.minMaxStartLayer+2*i].set_weights([self.lays[i][2],0.*self.model.layers[self.minMaxStartLayer+2*i].get_weights()[1]])
