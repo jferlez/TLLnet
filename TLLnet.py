@@ -401,7 +401,7 @@ class TLLnet:
                     raise(TypeError(f'{tllfile} does not contain a valid TLL format. Element {j} of proptery \'selectorSets\' should be a list of length at least 1.'))
                 for k in range(len(tllDict['selectorSets'][j])):
                     if type(tllDict['selectorSets'][j][k]) != set \
-                                or any([type(el) != int for el in tllDict['selectorSets'][j][k]]) \
+                                or any([(type(el) != int and type(el) != np.int64 and type(el) != np.uint64) for el in tllDict['selectorSets'][j][k]]) \
                                 or min(tllDict['selectorSets'][j][k]) < 0 \
                                 or max(tllDict['selectorSets'][j][k]) >= tllDict['N']:
                             raise(TypeError(f'{tllfile} does not contain a valid TLL format. Selector set {k} for output {j} should be a set of integers between 0 and {tllDict["N"]-1}'))
