@@ -463,10 +463,17 @@ class TLLnet:
             ] \
         )
 
+        # Workaround for weird behavior where selection layer biases are stripped from ONNX model
+        # Probably this has to do with VNN competion re-exporting of my original ONNX models, but then needs to be investigated
+        if importONNXModel.graph.node[3].name in importONNXDict:
+            selectionLayerBias = onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[3].name]['initializer'])
+        else:
+            selectionLayerBias = np.zeros(N*M,dtype=npDataType)
+
         tll.selectorLayer.set_weights( \
             [ \
                 onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[2].name]['initializer']), \
-                onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[3].name]['initializer'])
+                selectionLayerBias
             ] \
         )
         sSets = [[] for k in range(m)]
