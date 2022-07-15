@@ -421,7 +421,7 @@ class TLLnet:
 
 
     @classmethod
-    def fromONNX(cls, onnxFile, dtype=npDataType):
+    def fromONNX(cls, onnxFile, dtype=npDataType, validateLayers=True):
         assert onnxAvailable, 'ONNX is unavailable.'
 
         importONNXModel = onnx.load(onnxFile)
@@ -454,15 +454,10 @@ class TLLnet:
 
         tll = cls(input_dim=n, output_dim=m, linear_fns=N, uo_regions=M, dtype=dtype, dtypeKeras=dtypeKeras)
 
-        tll.createKeras(incBias=True,flat=True)
-
-        tll.linearLayer.set_weights( \
-            [ \
-                onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[0].name]['initializer']), \
-                onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[1].name]['initializer'])
-            ] \
-        )
-
+        #######################################################################################
+        # Fetch selector layer weights from the ONNX model, and convert them to selector sets #
+        #######################################################################################
+        selectionLayerWeights = onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[2].name]['initializer'])
         # Workaround for weird behavior where selection layer biases are stripped from ONNX model
         # Probably this has to do with VNN competion re-exporting of my original ONNX models, but then needs to be investigated
         if importONNXModel.graph.node[3].name in importONNXDict:
@@ -470,35 +465,55 @@ class TLLnet:
         else:
             selectionLayerBias = np.zeros(N*M,dtype=npDataType)
 
-        tll.selectorLayer.set_weights( \
-            [ \
-                onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[2].name]['initializer']), \
-                selectionLayerBias
-            ] \
-        )
         sSets = [[] for k in range(m)]
-        for k in range(m):
-            for j in range(M):
-                s = np.nonzero(tll.getKerasSelector(j,out=k))
-                assert set(s[1]) == set(range(N)) and np.all(tll.getKerasSelector(j,out=k)[s] == 1), 'ERROR: TLL layer 2 must contain valid selector matrices.'
-                sSets[k].append(set(s[0]))
-        
-        tll.setLocalLinearFns(tll.getKerasAllLocalLinFns(transpose=True))
+        for out in range(m):
+            for idx in range(M):
+                # Basically code from getKerasSelector
+                minTermWeights = selectionLayerWeights[out*N:(out+1)*N, (out*(N*M)+idx*N):(out*(N*M)+(idx+1)*N) ].astype(dtype)
+                s = np.nonzero(minTermWeights)
+                assert set(s[1]) == set(range(N)) and np.all(minTermWeights[s] == 1), 'ERROR: TLL layer 2 must contain valid selector matrices.'
+                sSets[out].append(set(s[0]))
+
+        ##################################################
+        # Fetch linear layer weights from the ONNX model #
+        ##################################################
+        # Basically combined code from getKerasLocalLinFns and getKerasAllLocalLinFns
+        currWeights = [ \
+                            onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[0].name]['initializer']), \
+                            onnx.numpy_helper.to_array(importONNXDict[importONNXModel.graph.node[1].name]['initializer'])
+                        ]
+        lLinFns = [ \
+                [ \
+                    currWeights[0][:, (out*N):((out+1)*N) ].astype(dtype).T, \
+                    currWeights[1][ (out*N):((out+1)*N) ].astype(dtype) \
+                ] for out in range(m) \
+            ]
+
+        ######################################################################################
+        # Set the TLL with local linear functions/selector sets obtained from the ONNX model #
+        ######################################################################################
+        tll.setLocalLinearFns(lLinFns)
         tll.setSelectorSets(sSets)
 
-        tll.exportONNX()
+        ######################################################################################################
+        # Validate the parameters of the other layers in the ONNX model if requested (SLOW because of Keras) #
+        ######################################################################################################
+        if validateLayers:
+            tll.createKeras(incBias=True,flat=True)
 
-        validTLLONNXDict = createONNXDict(tll.onnxModel)
+            tll.exportONNX()
 
-        assert len(tll.onnxModel.graph.node) == len(importONNXModel.graph.node) \
-            and len(tll.onnxModel.graph.initializer) == len(importONNXModel.graph.initializer), 'ERROR: Incorrect number of layers for a TLL'
-        
-        for ndIdx in range(len(importONNXModel.graph.node)):
-            assert importONNXModel.graph.node[ndIdx].op_type == tll.onnxModel.graph.node[ndIdx].op_type, 'ERROR: TLL layer type mismatch for layer ' + str(ndIdx)
-            if importONNXModel.graph.node[ndIdx].name in importONNXDict and tll.onnxModel.graph.node[ndIdx].name in validTLLONNXDict:
-                assert np.array_equal(onnx.numpy_helper.to_array( importONNXDict[importONNXModel.graph.node[ndIdx].name]['initializer'] ), \
-                                        onnx.numpy_helper.to_array( validTLLONNXDict[tll.onnxModel.graph.node[ndIdx].name]['initializer'] ) ), \
-                            'ERROR: TLL layer weights mismatch for layer ' + str(ndIdx)
+            validTLLONNXDict = createONNXDict(tll.onnxModel)
+
+            assert len(tll.onnxModel.graph.node) == len(importONNXModel.graph.node) \
+                and len(tll.onnxModel.graph.initializer) == len(importONNXModel.graph.initializer), 'ERROR: Incorrect number of layers for a TLL'
+            
+            for ndIdx in range(len(importONNXModel.graph.node)):
+                assert importONNXModel.graph.node[ndIdx].op_type == tll.onnxModel.graph.node[ndIdx].op_type, 'ERROR: TLL layer type mismatch for layer ' + str(ndIdx)
+                if importONNXModel.graph.node[ndIdx].name in importONNXDict and tll.onnxModel.graph.node[ndIdx].name in validTLLONNXDict:
+                    assert np.array_equal(onnx.numpy_helper.to_array( importONNXDict[importONNXModel.graph.node[ndIdx].name]['initializer'] ), \
+                                            onnx.numpy_helper.to_array( validTLLONNXDict[tll.onnxModel.graph.node[ndIdx].name]['initializer'] ) ), \
+                                'ERROR: TLL layer weights mismatch for layer ' + str(ndIdx)
         
         return tll
 
