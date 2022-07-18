@@ -93,6 +93,22 @@ class TLLnet:
                     self.setKerasSelector(self.selectorMatKerasFromSet(self.selectorSets[k][sIdx]), j, out=k )
                     if sIdx < len(self.selectorSets[k])-1:
                         sIdx += 1
+    def pointEval(self,pt):
+        localEval = [ lf[0] @ pt.reshape(self.n,1) + lf[1].reshape(self.N,1) for lf in self.localLinearFns ]
+        for out in range(len(self.selectorSets)):
+            localEval[out] = np.max(np.array([ np.min(localEval[out][tuple(sSet),]) for sSet in self.selectorSets[out] ],dtype=npDataType))
+        return np.array(localEval,dtype=npDataType)
+
+    def activeLinearFunction(self,pt):
+        localEval = [ lf[0] @ pt.reshape(self.n,1) + lf[1].reshape(self.N,1) for lf in self.localLinearFns ]
+        fnsOut = []
+        for out in range(len(self.selectorSets)):
+            temp = np.argmax(np.array([ np.min(localEval[out][tuple(sSet),]) for sSet in self.selectorSets[out] ],dtype=npDataType))
+            sSet = tuple(self.selectorSets[out][temp])
+            fnsOut.append(sSet[ \
+                               np.argmin(localEval[out][sSet,]) \
+                               ])
+        return fnsOut
 
     def createKeras(self, incBias=False, flat=False):
         self.flat = flat
