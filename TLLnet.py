@@ -60,7 +60,7 @@ class TLLnet:
             self.M = int(np.sum([scipy.special.binom((self.N*self.N-self.N)/2,i) for i in range(0,self.n+1)]))
         else:
             self.M=uo_regions
-        
+
         self.model = None
 
         self.localLinearFns = [[np.zeros((self.N,self.n)),np.zeros((self.N,))] for k in range(self.m)]
@@ -71,7 +71,7 @@ class TLLnet:
         assert len(localLinearFns) == self.m, 'Local linear functions must be specified for each output!'
         for k in range(self.m):
             assert localLinearFns[k][0].shape == (self.N,self.n) and localLinearFns[k][1].shape == (self.N,), 'Incorrect shape of local linear functions for output ' + str(k) + '!'
-        
+
 
         self.localLinearFns = [[x[0].astype(dtype=self.dtype), x[1].astype(dtype=self.dtype)] for x in localLinearFns]
         if self.model is not None:
@@ -83,7 +83,7 @@ class TLLnet:
         assert len(selectorSets) == self.m, 'Selector sets must be specified for each output!'
         for k in range(self.m):
             assert len(selectorSets[k]) <= self.M, 'Too many selector sets specified for output ' + str(k) + '!'
-        
+
 
         self.selectorSets = deepcopy(selectorSets)
         if self.model is not None:
@@ -128,7 +128,7 @@ class TLLnet:
                     self.selectorLayer(self.linearLayer(self.inlayer)) \
                 )
             self.minMaxStartLayer = 4
-        
+
         self.lays = []
 
         bankIdx = 0
@@ -155,11 +155,11 @@ class TLLnet:
             reduc = int(mm[1]/self.m) if flat else mm[1]
             x = mm[0][1](mm[0][0](x))
             bankIdx += 1
-        
+
 
         if not flat:
             x = tf.keras.layers.Reshape((self.m,), dtype=self.dtypeKeras)(x)
-        
+
         self.outputLayer = x
 
         self.model = Model(inputs=self.inlayer, outputs=self.outputLayer)
@@ -177,7 +177,7 @@ class TLLnet:
             else:
                 self.model.layers[self.minMaxStartLayer+2*i].set_weights([self.lays[i][2]])
                 self.model.layers[self.minMaxStartLayer+2*i+1].set_weights([self.lays[i][3]])
-        
+
         if incBias:
             self.model.layers[2].set_weights( [self.model.layers[2].get_weights()[0], 0.*self.model.layers[2].get_weights()[1] ] )
 
@@ -191,7 +191,7 @@ class TLLnet:
                 self.setKerasSelector(self.selectorMatKerasFromSet(self.selectorSets[k][sIdx]), j, out=k)
                 if sIdx < len(self.selectorSets[k]) - 1:
                     sIdx += 1
-    
+
     def setKerasLocalLinFns(self, kern, bias, out=0):
         currWeights = self.linearLayer.get_weights()
 
@@ -199,7 +199,7 @@ class TLLnet:
         currWeights[1][ (out*self.N):((out+1)*self.N) ] = bias.astype(self.dtypeNpKeras)
 
         self.linearLayer.set_weights(currWeights)
-    
+
     def getKerasLocalLinFns(self, out=0, transpose=False):
         currWeights = self.linearLayer.get_weights()
 
@@ -210,13 +210,13 @@ class TLLnet:
         if transpose:
             retWeights[0] = retWeights[0].T
         return retWeights
-    
+
     def getKerasAllLocalLinFns(self, transpose=False):
 
         return [ \
                 self.getKerasLocalLinFns(out=k,transpose=transpose) for k in range(self.m) \
             ]
-    
+
     def setKerasSelector(self, arr, idx, out=0):
         if idx >= self.M:
             raise ValueError('Specified index must be less than the number of UO Regions!')
@@ -227,7 +227,7 @@ class TLLnet:
         currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = arr.astype(self.dtypeNpKeras)
 
         self.selectorLayer.set_weights(currWeights)
-    
+
     def setKerasSelectorBroken(self, arr, idx, out=0):
         if idx >= self.M:
             raise ValueError('Specified index must be less than the number of UO Regions!')
@@ -238,7 +238,7 @@ class TLLnet:
         currWeights[0][:, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ] = arr.astype(self.dtypeNpKeras)
 
         self.selectorLayer.set_weights(currWeights)
-    
+
     def getKerasSelector(self, idx, out=0):
         if idx >= self.M:
             raise ValueError('Specified index must be less than the number of UO Regions!')
@@ -246,7 +246,7 @@ class TLLnet:
         currWeights = self.selectorLayer.get_weights()
 
         return currWeights[0][out*self.N:(out+1)*self.N, (out*(self.N*self.M)+idx*self.N):(out*(self.N*self.M)+(idx+1)*self.N) ].astype(self.dtype)
-    
+
     def getKerasAllSelectors(self):
 
         return [ \
@@ -264,27 +264,27 @@ class TLLnet:
             insertCounter += 1
         for i in range(insertCounter,len(e)):
             ret[:,i] = ret[:,insertCounter-1]
-        
+
         return ret
 
     def generateRandomCPWA(self,scale=1.0, ext=np.array([-10,10]), iterations=100000):
         if len(ext.shape)==1:
             ext = np.vstack([ext for i in range(self.n)])
-        
+
         self.localLinearFns = []
         self.selectorSets = []
-        
+
         for out in range(self.m):
             kern = np.random.normal(loc=0, scale=scale/10, size=(self.n, self.N)).astype(self.dtype)
             bias = np.random.normal(loc=0, scale=scale, size=(self.N,)).astype(self.dtype)
-            
+
             idxs = np.array([ i for i in range(self.N) ], dtype=self.dtype)
-            
+
             selMats = [[] for i in range(self.M)]
             selSets = [set([]) for i in range(self.M)]
             selSets[0] = intToSet( myRandSet(self.N) )
             selMats[0] = self.selectorMatKerasFromSet(selSets[0])
-            
+
             matCounter = 1
             itCnt = iterations
             while matCounter < self.M and itCnt > 0:
@@ -319,17 +319,17 @@ class TLLnet:
                 for k in range(self.M):
                     self.setKerasSelector(selMats[k],k,out=out)
             # print(intersections)
-    
+
     def exportONNX(self,fname=None):
         assert onnxAvailable, 'ONNX is unavailable.'
-        
+
         if self.model is None:
             self.createKeras()
 
         if not self.incBias or not self.flat:
             print('ONNX export requires that createKeras() be called with options: incBias=True, flat=True.\nPlease re-create Keras model with these options...')
             return
-        
+
         dummyBias = 1.0
 
         # Set a non-zero bias on the selection/minBank/maxBank layers, so that the biases survive the ONNX conversion
@@ -341,7 +341,7 @@ class TLLnet:
                 for l in lyr[0]:
                     wts = l.get_weights()
                     l.set_weights([wts[0], dummyBias*np.ones(wts[1].shape,dtype=self.dtypeNpKeras)])
-        
+
 
         # Convert the Keras model to ONNX
         self.onnxModel, _ = tf2onnx.convert.from_keras(self.model, input_signature=(tf.TensorSpec((None, self.n), self.dtypeKeras, name="input"),), opset=13)
@@ -367,7 +367,7 @@ class TLLnet:
 
         if fname is not None:
             onnx.save(self.onnxModel, fname)
-    
+
     def toPythonIntSelectorSets(self):
         for k in range(self.m):
             for j in range(len(self.selectorSets[k])):
@@ -407,7 +407,7 @@ class TLLnet:
             for p in ['localLinearFns', 'selectorSets']:
                 if len(tllDict[p]) != tllDict['m']:
                     raise(TypeError(f'{tllfile} does not contain a valid TLL format. {p} should be a list of length {tllDict["m"]}'))
-            
+
             dtype = None
             shp = {0:(tllDict['N'], tllDict['n']), 1:(tllDict['N'],) }
             for j in range(tllDict['m']):
@@ -428,7 +428,7 @@ class TLLnet:
                                 or min(tllDict['selectorSets'][j][k]) < 0 \
                                 or max(tllDict['selectorSets'][j][k]) >= tllDict['N']:
                             raise(TypeError(f'{tllfile} does not contain a valid TLL format. Selector set {k} for output {j} should be a set of integers between 0 and {tllDict["N"]-1}'))
-                    
+
         tll = cls(input_dim=tllDict['n'], output_dim=tllDict['m'], linear_fns=tllDict['N'], uo_regions=tllDict['M'], dtype=dtype, dtypeKeras=dtypeKeras)
         tll.setLocalLinearFns(tllDict['localLinearFns'])
         tll.setSelectorSets(tllDict['selectorSets'])
@@ -523,14 +523,14 @@ class TLLnet:
 
             assert len(tll.onnxModel.graph.node) == len(importONNXModel.graph.node) \
                 and len(tll.onnxModel.graph.initializer) == len(importONNXModel.graph.initializer), 'ERROR: Incorrect number of layers for a TLL'
-            
+
             for ndIdx in range(len(importONNXModel.graph.node)):
                 assert importONNXModel.graph.node[ndIdx].op_type == tll.onnxModel.graph.node[ndIdx].op_type, 'ERROR: TLL layer type mismatch for layer ' + str(ndIdx)
                 if importONNXModel.graph.node[ndIdx].name in importONNXDict and tll.onnxModel.graph.node[ndIdx].name in validTLLONNXDict:
                     assert np.array_equal(onnx.numpy_helper.to_array( importONNXDict[importONNXModel.graph.node[ndIdx].name]['initializer'] ), \
                                             onnx.numpy_helper.to_array( validTLLONNXDict[tll.onnxModel.graph.node[ndIdx].name]['initializer'] ) ), \
                                 'ERROR: TLL layer weights mismatch for layer ' + str(ndIdx)
-        
+
         return tll
 
 
@@ -545,13 +545,13 @@ def createONNXDict(onnxModel):
         if re.search( r'^.*/ReadVariableOp:0', inst.name ):
             name = inst.name[0:-17]
             weightsDict[name] = {'raw_data':inst.raw_data, 'dims':inst.dims, 'data_type':inst.data_type, 'initializer':inst}
-    
+
     for ndIdx in range(len(onnxModel.graph.node)):
         if onnxModel.graph.node[ndIdx].name in weightsDict:
             weightsDict[onnxModel.graph.node[ndIdx].name]['op_type'] = onnxModel.graph.node[ndIdx].op_type
             weightsDict[onnxModel.graph.node[ndIdx].name]['node_idx'] = ndIdx
 
-    return weightsDict 
+    return weightsDict
 
 def selectorMatrixToSet(sMat):
     return set(list(map(lambda x: int(x), np.nonzero(sMat)[0].tolist())))
@@ -601,7 +601,7 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
         finalWeights = np.array([0.5,-0.5,0.5,0.5],dtype=dtypeNpKeras)
     else:
         finalWeights = np.array([0.5,-0.5,-0.5,-0.5],dtype=dtypeNpKeras)
-    
+
 
     if outputDim > 1:
         if numGroups > 1:
@@ -629,7 +629,7 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
     # appears in another comparison
     if odd:
         compLayerKernel[groupSize-2:groupSize,compLayerKernel.shape[1]-4:compLayerKernel.shape[1]] = np.array([[1,1],[-1,-1],[-1,1],[1,-1]],dtype=dtypeNpKeras).T
-    
+
     outLayerKernel = np.zeros((compLayerKernel.shape[1], numMins + 1 if odd else numMins))
 
     for k in range(numMins+1 if odd else numMins):
@@ -652,7 +652,7 @@ def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,fl
 
 
 # if __name__ == '__main__':
-    
+
 #     # mxnet = MinMaxBankByN(numGroups=2,groupSize=3,outputDim=2)
 
 #     # x = TLLnet(input_dim=1, output_dim=2, linear_fns=10)
