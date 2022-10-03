@@ -28,6 +28,8 @@ class TLLnetFromFunction(TLLnet):
         # We will use this object for LP calls:
         self.lp = encapsulateLP.encapsulateLP()
 
+        polytope = [polytope[0].copy(), polytope[1].copy().reshape(polytope[1].shape[0],-1)]
+
         # Find an interior point of the specified polytope:
         self.pt = findInteriorPoint( np.hstack([-polytope[1],polytope[0]]), lpObj=self.lp )
         assert self.pt is not None, 'ERROR: specified polytope does not have an interior!'
