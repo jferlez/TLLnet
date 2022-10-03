@@ -46,6 +46,7 @@ class TLLnetFromFunction(TLLnet):
         H = np.hstack([-polytope[1],polytope[0]])
         # Remove any redundant constraints:
         self.H = H[lpMinHRep(H,None,range(H.shape[0]),lpObj=self.lp),:]
+        self.numConstraints = self.H.shape[0]
 
     def generateLocalLinearFns(self):
         # Use a list, because we will add these in chunks of unknown size
@@ -62,7 +63,7 @@ class TLLnetFromFunction(TLLnet):
         np.copyto(self.HSharedNP, self.H)
 
         # define shared memory for the return values from each pool worker
-        self.constraintBuffer = [ mp.Array('i', self.H.shape[0] * self.MULTI_CHUNK_SIZE) for ii in range(self.NUM_CPUS * self.BUFFER_DEPTH) ]
+        self.constraintBuffer = [ mp.RawArray('i', self.H.shape[0] * self.MULTI_CHUNK_SIZE) for ii in range(self.NUM_CPUS * self.BUFFER_DEPTH) ]
         self.bufferFreeQueue = queue.Queue()
         for ii in range(len(self.constraintBuffer)):
             self.bufferFreeQueue.put(ii)
@@ -81,7 +82,10 @@ class TLLnetFromFunction(TLLnet):
         poolGlobals = { \
             'H': self.HShared, \
             'q': self.bufferDoneQueue, \
-            'constraintBuffer': self.constraintBuffer \
+            'constraintBuffer': self.constraintBuffer, \
+            'n': self.n, \
+            'numConstraints': self.numConstraints, \
+            'MULTI_CHUNK_SIZE': self.MULTI_CHUNK_SIZE \
         }
         p = mp.Pool(self.NUM_CPUS,initializer=initPoolContext,initargs=(poolGlobals,))
 
@@ -107,6 +111,7 @@ class TLLnetFromFunction(TLLnet):
             self.scheduleSequentialChunks()
         p.close()
         p.join()
+        print(np.frombuffer(self.constraintBuffer[0],dtype=np.int32))
 
     def scheduleSequentialChunks(self):
         runOnce = True
@@ -139,8 +144,11 @@ def initPoolContext(poolGlobals):
     global shared
     shared = poolGlobals
 
-def sliceBoundary(bufferIdx, chunkIdx, sliceLB, chunkLen, eta , myqueue):
+def sliceBoundary(bufferIdx, chunkIdx, sliceLB, chunkLen, eta, myqueue):
     print(f'Enqueueing result on process {os.getpid()}')
+    myBuffer = np.frombuffer(shared['constraintBuffer'][bufferIdx],dtype=np.int32).reshape((shared['numConstraints'], shared['MULTI_CHUNK_SIZE']))
+    print(f'[[PID {os.getpid()}]] local buffer shape is {myBuffer.shape}')
+    np.copyto(myBuffer, -np.ones(myBuffer.shape,dtype=np.int32))
     myqueue.put_nowait((bufferIdx, chunkIdx))
     return True
 
