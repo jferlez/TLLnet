@@ -65,7 +65,7 @@ class TLLnetFromFunction(TLLnet):
         np.copyto(self.HSharedNP, self.H)
 
         # define shared memory for the return values from each pool worker
-        self.constraintBuffer = [ mp.RawArray('i', self.H.shape[0] * self.MULTI_CHUNK_SIZE) for ii in range(self.NUM_CPUS * self.BUFFER_DEPTH) ]
+        self.constraintBuffer = [ mp.RawArray('i', (self.H.shape[0]+1) * (self.MULTI_CHUNK_SIZE+1)) for ii in range(self.NUM_CPUS * self.BUFFER_DEPTH) ]
         self.bufferFreeQueue = queue.Queue()
         for ii in range(len(self.constraintBuffer)):
             self.bufferFreeQueue.put(ii)
@@ -87,7 +87,9 @@ class TLLnetFromFunction(TLLnet):
             'constraintBuffer': self.constraintBuffer, \
             'n': self.n, \
             'numConstraints': self.numConstraints, \
-            'MULTI_CHUNK_SIZE': self.MULTI_CHUNK_SIZE \
+            'MULTI_CHUNK_SIZE': self.MULTI_CHUNK_SIZE, \
+            'sliceDim': self.sliceDim, \
+            'bbox': self.bbox \
         }
         p = mp.Pool(self.NUM_CPUS,initializer=initPoolContext,initargs=(poolGlobals,))
 
@@ -103,11 +105,12 @@ class TLLnetFromFunction(TLLnet):
                         bufferIdx, \
                         chunkIdx, \
                         self.lb - self.spill + chunkIdx * self.eta, \
-                        min(chunkIdx + self.MULTI_CHUNK_SIZE , self.dim0cnt), \
+                        min(self.MULTI_CHUNK_SIZE , self.dim0cnt - chunkIdx), \
                         self.eta, \
                         self.bufferDoneQueue \
                     ) \
                 )
+            #r.get()
         while self.numGPUScheduled < self.dim0cnt:
             #print(self.sequentialChunks)
             self.scheduleSequentialChunks()
@@ -145,12 +148,46 @@ class TLLnetFromFunction(TLLnet):
 def initPoolContext(poolGlobals):
     global shared
     shared = poolGlobals
+    lpObj = encapsulateLP.encapsulateLP()
 
 def sliceBoundary(bufferIdx, chunkIdx, sliceLB, chunkLen, eta, myqueue):
     print(f'Enqueueing result on process {os.getpid()}')
-    myBuffer = np.frombuffer(shared['constraintBuffer'][bufferIdx],dtype=np.int32).reshape((shared['numConstraints'], shared['MULTI_CHUNK_SIZE']))
-    print(f'[[PID {os.getpid()}]] local buffer shape is {myBuffer.shape}')
-    np.copyto(myBuffer, -np.ones(myBuffer.shape,dtype=np.int32))
+    # Shortcut local variables for read-only shared globals:
+    lp = encapsulateLP.encapsulateLP()
+    N = shared['numConstraints']
+    n = shared['n']
+    sliceDim = shared['sliceDim']
+    MULTI_CHUNK_SIZE = shared['MULTI_CHUNK_SIZE']
+    bbox = shared['bbox']
+
+    # This is the shared memory we will use to return the minimal set of constraints for the current slice:
+    myBuffer = np.frombuffer(shared['constraintBuffer'][bufferIdx],dtype=np.int32).reshape((N+1, MULTI_CHUNK_SIZE+1))
+    # Erase buffer with 0's
+    np.copyto(myBuffer, np.zeros(myBuffer.shape,dtype=np.int32))
+
+    # Create a local copy of the constraints from the shared memory
+    H = np.frombuffer(shared['H'],dtype=np.float64).reshape((N, n+1)).copy()
+
+    for ii in range(chunkLen+1):
+        #print(f'[[PID {os.getpid()}]] {sliceLB + ii * eta}')
+        if n > 1:
+            if sliceLB + ii*eta > bbox[sliceDim,0] and sliceLB + ii*eta < bbox[sliceDim,1]:
+                # Get the minimal Hrep of the n-1 dimensional slice
+                temp = lpMinHRep( \
+                                np.hstack([ \
+                                                (H[:,0] + H[:,1+sliceDim]*(sliceLB + ii*eta)).reshape(N,-1), \
+                                                (H[:, 1:(1+sliceDim)]).reshape(N,-1), \
+                                                (H[:, (1+sliceDim+1):]).reshape(N,-1) \
+                                            ]), \
+                                None, \
+                                range(H.shape[0]), \
+                                lpObj=lp \
+                            )
+                print(f'[[PID {os.getpid()}]] slice coordinate = {sliceLB + ii * eta}; temp = {temp}')
+        else:
+            myBuffer[:N,ii] = np.arange(N,dtype=np.int32)
+            myBuffer[-1,ii] = N
+            print(f'[[PID {os.getpid()}]] slice coordinate = {sliceLB + ii * eta}; {myBuffer}')
     myqueue.put_nowait((bufferIdx, chunkIdx))
     return True
 
