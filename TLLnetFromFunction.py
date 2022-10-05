@@ -183,6 +183,8 @@ def sliceBoundary(bufferIdx, chunkIdx, sliceLB, chunkLen, eta, myqueue):
                                 range(H.shape[0]), \
                                 lpObj=lp \
                             )
+                myBuffer[:len(temp),ii] = np.array(temp,dtype=np.int32)
+                myBuffer[-1,ii] = len(temp)
                 print(f'[[PID {os.getpid()}]] slice coordinate = {sliceLB + ii * eta}; temp = {temp}')
         else:
             myBuffer[:N,ii] = np.arange(N,dtype=np.int32)
