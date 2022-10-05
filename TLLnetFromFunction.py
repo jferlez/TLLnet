@@ -11,12 +11,13 @@ from jax import jit
 import multiprocessing as mp
 import queue
 import os
+import time
 
 shared = None
 
 class TLLnetFromFunction(TLLnet):
 
-    def __init__(self, fn: Callable[[np.ndarray],np.ndarray], eta=0.01, polytope=None, tol=1e-9, rTol=1e-9, NUM_CPUS=4, NUM_GPUS=0, MULTI_CHUNK_SIZE=100, BUFFER_DEPTH=2):
+    def __init__(self, fn: Callable[[np.ndarray],np.ndarray], eta=0.01, polytope=None, tol=1e-9, rTol=1e-9, NUM_CPUS=4, NUM_GPUS=1, MULTI_CHUNK_SIZE=100, BUFFER_DEPTH=2):
         self.eta = eta
         self.NUM_CPUS = NUM_CPUS
         self.NUM_GPUS = NUM_GPUS
@@ -66,7 +67,7 @@ class TLLnetFromFunction(TLLnet):
 
         # define shared memory for the return values from each pool worker
         self.constraintBuffer = [ mp.RawArray('i', (self.H.shape[0]+1) * (self.MULTI_CHUNK_SIZE+1)) for ii in range(self.NUM_CPUS * self.BUFFER_DEPTH) ]
-        self.bufferFreeQueue = queue.Queue()
+        self.bufferFreeQueue = mp.Queue()
         for ii in range(len(self.constraintBuffer)):
             self.bufferFreeQueue.put(ii)
         self.sequentialChunks = {}
@@ -93,6 +94,29 @@ class TLLnetFromFunction(TLLnet):
         }
         p = mp.Pool(self.NUM_CPUS,initializer=initPoolContext,initargs=(poolGlobals,))
 
+        self.gpuWorkQueue = mp.Queue()
+        self.gpuWorkers = [ \
+                    mp.Process( \
+                        target=fnsFromSlice, \
+                        args=( \
+                              ii, \
+                              self.constraintBuffer, \
+                              self.HShared, \
+                              self.sliceDim, \
+                              self.lb, \
+                              self.spill, \
+                              self.eta, \
+                              self.numConstraints, \
+                              self.n, \
+                              self.MULTI_CHUNK_SIZE, \
+                              self.gpuWorkQueue, \
+                              self.bufferFreeQueue \
+                        ) \
+                    ) for ii in range(self.NUM_GPUS) ]
+        for pr in self.gpuWorkers:
+            pr.start()
+
+
         for chunkIdx in range(0,self.dim0cnt,self.MULTI_CHUNK_SIZE):
             chunk = (self.lb - self.spill + chunkIdx * self.eta, self.lb - self.spill + min(chunkIdx + self.MULTI_CHUNK_SIZE , self.dim0cnt) * self.eta )
             print(chunk)
@@ -116,6 +140,15 @@ class TLLnetFromFunction(TLLnet):
             self.scheduleSequentialChunks()
         p.close()
         p.join()
+
+        # Wait for all of the GPU workers to finish
+        while not self.gpuWorkQueue.empty():
+            time.sleep(0.1)
+        # Now shutdown all of the gpu workers
+        for ii in range(self.NUM_GPUS):
+            self.gpuWorkQueue.put([])
+        for ii in range(self.NUM_GPUS):
+            self.gpuWorkers[ii].join()
         print(np.frombuffer(self.constraintBuffer[0],dtype=np.int32))
 
     def scheduleSequentialChunks(self):
@@ -142,8 +175,10 @@ class TLLnetFromFunction(TLLnet):
                 #print(f'Chunks {self.sequentialChunks[runIdx]} ready for GPU scheduling')
                 print(f'Slice = ({self.lb - self.spill + chunkBegin *self.eta}, {self.lb - self.spill + min(self.dim0cnt, chunkBegin + self.MULTI_CHUNK_SIZE*self.GPU_RATIO)*self.eta})')
                 self.numGPUScheduled += endCnt
+                # Schedule this sequential chunk on a GPU:
+                self.gpuWorkQueue.put(self.sequentialChunks[runIdx])
                 # Now release the buffers
-                for res in self.sequentialChunks[runIdx]: self.bufferFreeQueue.put(res[0])
+                #for res in self.sequentialChunks[runIdx]: self.bufferFreeQueue.put(res[0])
 
 def initPoolContext(poolGlobals):
     global shared
@@ -193,7 +228,25 @@ def sliceBoundary(bufferIdx, chunkIdx, sliceLB, chunkLen, eta, myqueue):
     myqueue.put_nowait((bufferIdx, chunkIdx))
     return True
 
+def fnsFromSlice(deviceId,constraintBuffer,HShared,sliceDim,lb,spill,eta,N,n,MULTI_CHUNK_SIZE,inputQueue,constraintBufferQueue):
+    buffers = [np.frombuffer(constraintBuffer[ii],dtype=np.int32).reshape((N+1, MULTI_CHUNK_SIZE+1)) for ii in range(len(constraintBuffer))]
+    H = np.frombuffer(HShared,dtype=np.float64).reshape((N,n+1)).copy()
+    results = []
 
+    while True:
+        # Should be a GPU_RATIO-length set of chunks
+        workItem = inputQueue.get()
+        if len(workItem) == 0:
+            print(f'[[*GPU* PID {os.getpid()}]] EXITING!!')
+            break
+        workItem = sorted(workItem, key=lambda tup: tup[1])
+        print(f'[[*GPU* PID {os.getpid()}]] Got gpu work item {workItem}')
+        for it in workItem:
+            print(f'[[*GPU* PID {os.getpid()}]] Buffer lookup for {it}: {buffers[it[0]]}')
+        # Once work is done, release the associated constraint buffers
+        for res in workItem:
+            constraintBufferQueue.put(res[0])
+    return True
 
 def constraintBoundingBox(constraints,basis=None,lpObj=None):
     if lpObj is None:
