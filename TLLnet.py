@@ -192,6 +192,10 @@ class TLLnet:
                 if sIdx < len(self.selectorSets[k]) - 1:
                     sIdx += 1
 
+    def createOptimizedKeras(self):
+
+        return
+
     def setKerasLocalLinFns(self, kern, bias, out=0):
         currWeights = self.linearLayer.get_weights()
 
