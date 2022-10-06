@@ -106,6 +106,7 @@ class TLLnetFromFunction(TLLnet):
                               self.lb, \
                               self.spill, \
                               self.eta, \
+                              self.dim0cnt, \
                               self.numConstraints, \
                               self.n, \
                               self.MULTI_CHUNK_SIZE, \
@@ -228,7 +229,7 @@ def sliceBoundary(bufferIdx, chunkIdx, sliceLB, chunkLen, eta, myqueue):
     myqueue.put_nowait((bufferIdx, chunkIdx))
     return True
 
-def fnsFromSlice(deviceId,constraintBuffer,HShared,sliceDim,lb,spill,eta,N,n,MULTI_CHUNK_SIZE,inputQueue,constraintBufferQueue):
+def fnsFromSlice(deviceId,constraintBuffer,HShared,sliceDim,lb,spill,eta,dim0cnt,N,n,MULTI_CHUNK_SIZE,inputQueue,constraintBufferQueue):
     buffers = [np.frombuffer(constraintBuffer[ii],dtype=np.int32).reshape((N+1, MULTI_CHUNK_SIZE+1)) for ii in range(len(constraintBuffer))]
     H = np.frombuffer(HShared,dtype=np.float64).reshape((N,n+1)).copy()
     results = []
@@ -243,6 +244,17 @@ def fnsFromSlice(deviceId,constraintBuffer,HShared,sliceDim,lb,spill,eta,N,n,MUL
         print(f'[[*GPU* PID {os.getpid()}]] Got gpu work item {workItem}')
         for it in workItem:
             print(f'[[*GPU* PID {os.getpid()}]] Buffer lookup for {it}: {buffers[it[0]]}')
+            endSlice = min(workItem[-1][0], dim0cnt)
+        sliceList = [ lb - spill + (it[1] + jj) * eta for it in workItem for jj in range(MULTI_CHUNK_SIZE) ]
+        sliceList.append( lb - spill + (workItem[-1][1] + MULTI_CHUNK_SIZE ) * eta )
+        sliceList = sliceList[:min(dim0cnt+1 - workItem[0][1],len(workItem)*MULTI_CHUNK_SIZE+1)]
+        bdConstraints = np.zeros((buffers[workItem[0][0]].shape[0], len(workItem) * MULTI_CHUNK_SIZE + 1))
+        for idx in range(len(workItem)):
+            np.copyto(bdConstraints[:,1+(idx*MULTI_CHUNK_SIZE):1+((idx+1)*MULTI_CHUNK_SIZE)], buffers[workItem[idx][0]][:,1:])
+        bdConstraints[:,0] = buffers[workItem[0][0]][:,0]
+        print(f'[[*GPU* PID {os.getpid()}]] Slice list: {sliceList}')
+        print(f'[[*GPU* PID {os.getpid()}]] Assembled bd constraints: {bdConstraints}')
+
         # Once work is done, release the associated constraint buffers
         for res in workItem:
             constraintBufferQueue.put(res[0])
