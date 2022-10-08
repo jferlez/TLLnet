@@ -214,9 +214,7 @@ class TLLnet:
             self.pool = mp.Pool(NUM_CPUS, initializer=initPoolContext, initargs=(self.poolGlobals, ))
 
         out = 0
-        subsetDict = {}
-        for s in self.selectorSets[out]:
-            subsetDict[s] = []
+        subsetAssignment = [[] for s in range(len(self.selectorSets[out]))]
 
         singletons = []
         for linIdx in range(self.N):
@@ -227,9 +225,28 @@ class TLLnet:
             singletons.append((frozenset([linIdx]), frozenset(members) ))
         ssets = deepcopy(singletons)
         for ii in range(self.N):
-            edgeWeights, _, _, ssets = self.assembleAdjacency(ssets,singletons,dup=True if ii == 0 else False)
-            print(f'lin fn idx = {ii}\nedgeweights = {edgeWeights}\nssets = {ssets}')
+            edgeWeights, nonEmptyRows, nonEmptyCols, ssetsFull = self.assembleAdjacency(ssets,singletons,dup=True if ii == 0 else False)
+            print(f'lin fn idx = {ii}\nedgeweights = {edgeWeights}\nssets = {ssetsFull}')
+            ssetsNew = []
+            for iterCnt in range(iterationCount):
+                row_match, col_match = scipy.optimize.linear_sum_assignment(edgeWeights,maximize=True)
+                goodMatchIdx = np.nonzero(edgeWeights[row_match,col_match]>=2)[0]
+                if len(goodMatchIdx) == 0:
+                    break
+                row_match = row_match[goodMatchIdx]
+                col_match = col_match[goodMatchIdx]
+                for idx in range(len(row_match)):
+                    ssetsNew.append((ssets[row_match[idx]][0] | singletons[col_match[idx]][0], ssets[row_match[idx]][1] & singletons[col_match[idx]][1] ))
+                edgeWeights[row_match,col_match] = np.zeros(len(row_match),dtype=np.int32)
+            ssets = ssetsNew
+            for se in ssets:
+                for a in se[1]:
+                    subsetAssignment[a].append([se[0],len(se[1])])
+            print(f'Created ssets = {ssets}')
 
+        for ii in range(self.M):
+            subsetAssignment[ii].sort(key=(lambda x:x[1]))
+        print(f'subsetAssignment = {subsetAssignment}')
         self.pool.close()
         self.pool.join()
         self.pool = None
