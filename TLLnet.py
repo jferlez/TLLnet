@@ -202,7 +202,7 @@ class TLLnet:
                 if sIdx < len(self.selectorSets[k]) - 1:
                     sIdx += 1
 
-    def createOptimizedKeras(self, NUM_CPUS=4):
+    def createOptimizedKeras(self, iterationCount=2, NUM_CPUS=4):
         if self.pool is None:
             if self.mgr is None:
                 self.mgr = mp.Manager()
@@ -228,7 +228,7 @@ class TLLnet:
         ssets = deepcopy(singletons)
         for ii in range(self.N):
             edgeWeights, _, _, ssets = self.assembleAdjacency(ssets,singletons,dup=True if ii == 0 else False)
-            print(f'lin fn idx = {ii}\nedgeweights = {edgeWeights.toarray()}\nssets = {ssets}')
+            print(f'lin fn idx = {ii}\nedgeweights = {edgeWeights}\nssets = {ssets}')
 
         self.pool.close()
         self.pool.join()
@@ -612,7 +612,7 @@ class TLLnet:
         # adjacencyWorker(self.selectorSets, ssetsA, ssetsB, dup, rng[0], returnQueue)
 
         # Collect the results:
-        edgeWeights = lil_matrix((len(ssetsA),len(ssetsB)),dtype='i')
+        edgeWeights = np.zeros((len(ssetsA),len(ssetsB)),dtype=np.int32)
         emptyRows = set(list(range(len(ssetsA))))
         emptyCols = set([])
         repeatedSubsets = []
@@ -627,10 +627,15 @@ class TLLnet:
         if dup:
             edgeWeights = edgeWeights + edgeWeights.T
 
+        nonEmptyRows = np.ones(len(ssetsA),dtype=np.bool8)
+        nonEmptyCols = np.ones(len(ssetsB),dtype=np.bool8)
+        nonEmptyRows[list(emptyRows)] = np.zeros(len(emptyRows),dtype=np.bool8)
+        nonEmptyCols[list(emptyCols)] = np.zeros(len(emptyCols),dtype=np.bool8)
+
         # print(edgeWeights.toarray())
         # print(f'Repeated subsets = {repeatedSubsets}')
         # Assemble the worker results into one sparse adjacency matrix
-        return (edgeWeights, emptyRows, emptyCols, repeatedSubsets)
+        return (edgeWeights, nonEmptyRows, nonEmptyCols, repeatedSubsets)
 
 # *********************************
 # *      Helper functions:        *
@@ -640,7 +645,7 @@ IN_SELECTORS = 1
 def adjacencyWorker(selectorSets, U, V, dup, rng, returnQueue):
     retVals = []
     for ivl in rng:
-        retSparse = lil_matrix((len(U), abs(ivl[1]-ivl[0])), dtype='i')
+        retSparse = np.zeros((len(U), abs(ivl[1]-ivl[0])), dtype=np.int32)
         emptyCols = set(list(range(ivl[0],ivl[1])))
         emptyRows = set(list(range(len(U))))
         repeatedSubsets = []
