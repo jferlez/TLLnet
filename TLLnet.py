@@ -9,6 +9,10 @@ import keras
 import numpy as np
 import scipy.special
 import scipy
+from scipy.sparse import csr_matrix, coo_matrix, lil_matrix
+from scipy.sparse.csgraph import min_weight_full_bipartite_matching
+import multiprocessing as mp
+import math
 import re
 from functools import reduce
 from copy import deepcopy
@@ -192,7 +196,9 @@ class TLLnet:
                 if sIdx < len(self.selectorSets[k]) - 1:
                     sIdx += 1
 
-    def createOptimizedKeras(self):
+    def createOptimizedKeras(self, NUM_CPUS=4):
+        # create a pool of workers to compute adjacency matrix
+
 
         return
 
@@ -537,11 +543,96 @@ class TLLnet:
 
         return tll
 
+    def assembleAdjacency(self, ssetsA, ssetsB, dup=False, NUM_CPUS=4):
+        assert NUM_CPUS % 2 == 0, 'Please specify an even number of CPUs'
 
+        # Divide the work of computing the adjacency matrix:
+        even = True if len(ssetsB) % 2 == 0 else False
+        midIdx = len(ssetsB) // 2
+        groupSize = midIdx // NUM_CPUS
+        rng = []
+        numReturns = 0
+        for idx in range(0,midIdx,groupSize):
+            rng.append( [  (idx,min(idx+groupSize,midIdx)), (len(ssetsB)-min(idx+groupSize,midIdx), len(ssetsB)-idx) ] )
+            numReturns += 2
+        if not even:
+            rng[-1].append((midIdx + 1, midIdx + 2))
+            numReturns += 1
+
+        print(f'rng = {rng}')
+
+        # Create a process pool
+        returnQueue = mp.Queue()
+        workers = [ \
+                    mp.Process( \
+                        target=adjacencyWorker, \
+                        args=( \
+                                self.selectorSets, \
+                                ssetsA, \
+                                ssetsB, \
+                                dup, \
+                                rng[ii], \
+                                returnQueue \
+                        ) \
+                    ) for ii in range(len(rng)) \
+                ]
+        for pr in workers:
+            pr.start()
+
+        # adjacencyWorker(self.selectorSets, ssetsA, ssetsB, dup, rng[0], returnQueue)
+
+        # Collect the results:
+        edgeWeights = lil_matrix((len(ssetsA),len(ssetsB)),dtype='i')
+        emptyRows = set(list(range(len(ssetsA))))
+        emptyCols = set([])
+        repeatedSubsets = []
+        while numReturns > 0:
+            it = returnQueue.get()
+            edgeWeights[:,it[0][0]:it[0][1]] = it[1]
+            emptyRows = emptyRows & it[2]
+            emptyCols = emptyCols | it[3]
+            repeatedSubsets = repeatedSubsets + it[4]
+            numReturns -= 1
+        # Close the processes:
+        for pr in workers:
+            pr.join()
+            pr.close()
+        if dup:
+            edgeWeights = edgeWeights + edgeWeights.T
+
+        print(edgeWeights.toarray())
+        print(f'Repeated subsets = {repeatedSubsets}')
+        # Assemble the worker results into one sparse adjacency matrix
+        return
 
 # *********************************
 # *      Helper functions:        *
 # *********************************
+SUBSET = 0
+IN_SELECTORS = 1
+def adjacencyWorker(selectorSets, U, V, dup, rng, returnQueue):
+    retVals = []
+    for ivl in rng:
+        retSparse = lil_matrix((len(U), abs(ivl[1]-ivl[0])), dtype='i')
+        emptyCols = set(list(range(ivl[0],ivl[1])))
+        emptyRows = set(list(range(len(U))))
+        repeatedSubsets = []
+        for c in range(ivl[0], ivl[1]):
+            for r in ( range(len(U)) if not dup else range(c) ):
+                # Compute the number of selector sets that the augmented set U[r][SUBSET] | V[c][SUBSET] belongs to
+                # (only do this if they are disjoint)
+                if len(U[r][SUBSET] & V[c][SUBSET]) == 0:
+                    inSelectors = U[r][IN_SELECTORS] & V[c][IN_SELECTORS]
+                    retSparse[r, c-ivl[0]] = len(inSelectors)
+                    if len(inSelectors) > 1:
+                        repeatedSubsets.append((U[r][SUBSET] | V[c][SUBSET], inSelectors, (r,c)))
+                    if r in emptyRows:
+                        emptyRows.remove(r)
+                    if c in emptyCols:
+                        emptyCols.remove(c)
+        #print(retSparse.toarray())
+        returnQueue.put((ivl, retSparse, emptyRows, emptyCols, repeatedSubsets))
+    return True
 
 def createONNXDict(onnxModel):
     weightsDict = {}
