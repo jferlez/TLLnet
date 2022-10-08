@@ -624,8 +624,8 @@ class TLLnet:
             repeatedSubsets = repeatedSubsets + it[4]
             numReturns -= 1
 
-        if dup:
-            edgeWeights = edgeWeights + edgeWeights.T
+        # if dup:
+        #     edgeWeights = edgeWeights + edgeWeights.T
 
         nonEmptyRows = np.ones(len(ssetsA),dtype=np.bool8)
         nonEmptyCols = np.ones(len(ssetsB),dtype=np.bool8)
@@ -658,10 +658,13 @@ def adjacencyWorker(selectorSets, U, V, dup, rng, returnQueue):
                     for rIdx in range(r):
                         if U[rIdx][SUBSET] <= newSet:
                             continue
+                    if max(V[c][SUBSET])<max(newSet):
+                        print(f'{V[c][SUBSET]} and {newSet}')
+                        continue
                     inSelectors = frozenset(U[r][IN_SELECTORS] & V[c][IN_SELECTORS])
                     retSparse[r, c-ivl[0]] = len(inSelectors)
                     if len(inSelectors) > 1:
-                        repeatedSubsets.append(( newSet, inSelectors, (r,c)))
+                        repeatedSubsets.append(( newSet, inSelectors, (r,c), len(inSelectors)))
                     if r in emptyRows:
                         emptyRows.remove(r)
                     if c in emptyCols:
