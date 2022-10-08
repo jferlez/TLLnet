@@ -15,9 +15,12 @@ import multiprocessing as mp
 import math
 import re
 from functools import reduce
-from copy import deepcopy
+from copy import copy, deepcopy
 import re
 import pickle
+
+
+shared = None
 
 npDataType = np.float64
 tfDataType = tf.float64
@@ -37,6 +40,9 @@ typeMismatchWarning = True
 class TLLnet:
 
     def __init__(self, input_dim=1, output_dim=1, linear_fns=1, uo_regions=None, dtype=npDataType, dtypeKeras=tfDataType):
+        self.pool = None
+        self.mgr = None
+        self.returnQueue = None
         global typeMismatchWarning
         self.dtype = dtype
         self.dtypeKeras = dtypeKeras
@@ -197,9 +203,32 @@ class TLLnet:
                     sIdx += 1
 
     def createOptimizedKeras(self, NUM_CPUS=4):
-        # create a pool of workers to compute adjacency matrix
+        if self.pool is None:
+            if self.mgr is None:
+                self.mgr = mp.Manager()
+            if self.returnQueue is None:
+                self.returnQueue = self.mgr.Queue()
+            self.poolGlobals = { \
+                    'selectorSets': deepcopy(self.selectorSets) \
+                }
+            self.pool = mp.Pool(NUM_CPUS, initializer=initPoolContext, initargs=(self.poolGlobals, ))
 
+        out = 0
 
+        singletons = []
+        for linIdx in range(self.N):
+            members = []
+            for s in range(self.M):
+                if linIdx in self.selectorSets[out][s]:
+                    members.append(s)
+            singletons.append((set([linIdx]), set(members) ))
+        ssets = deepcopy(singletons)
+        for ii in range(1):
+            self.assembleAdjacency(ssets,singletons,dup=True)
+
+        self.pool.close()
+        self.pool.join()
+        self.pool = None
         return
 
     def setKerasLocalLinFns(self, kern, bias, out=0):
@@ -562,22 +591,19 @@ class TLLnet:
         print(f'rng = {rng}')
 
         # Create a process pool
-        returnQueue = mp.Queue()
-        workers = [ \
-                    mp.Process( \
-                        target=adjacencyWorker, \
-                        args=( \
-                                self.selectorSets, \
-                                ssetsA, \
-                                ssetsB, \
-                                dup, \
-                                rng[ii], \
-                                returnQueue \
-                        ) \
-                    ) for ii in range(len(rng)) \
-                ]
-        for pr in workers:
-            pr.start()
+        # returnQueue = mp.Queue()
+        for ii in range(len(rng)):
+            self.pool.apply_async( \
+                    adjacencyWorker, \
+                    ( \
+                            self.selectorSets, \
+                            ssetsA, \
+                            ssetsB, \
+                            dup, \
+                            rng[ii], \
+                            self.returnQueue \
+                    ) \
+                )
 
         # adjacencyWorker(self.selectorSets, ssetsA, ssetsB, dup, rng[0], returnQueue)
 
@@ -587,23 +613,20 @@ class TLLnet:
         emptyCols = set([])
         repeatedSubsets = []
         while numReturns > 0:
-            it = returnQueue.get()
+            it = self.returnQueue.get()
             edgeWeights[:,it[0][0]:it[0][1]] = it[1]
             emptyRows = emptyRows & it[2]
             emptyCols = emptyCols | it[3]
             repeatedSubsets = repeatedSubsets + it[4]
             numReturns -= 1
-        # Close the processes:
-        for pr in workers:
-            pr.join()
-            pr.close()
+
         if dup:
             edgeWeights = edgeWeights + edgeWeights.T
 
         print(edgeWeights.toarray())
         print(f'Repeated subsets = {repeatedSubsets}')
         # Assemble the worker results into one sparse adjacency matrix
-        return
+        return (edgeWeights, emptyRows, emptyCols, repeatedSubsets)
 
 # *********************************
 # *      Helper functions:        *
@@ -633,6 +656,10 @@ def adjacencyWorker(selectorSets, U, V, dup, rng, returnQueue):
         #print(retSparse.toarray())
         returnQueue.put((ivl, retSparse, emptyRows, emptyCols, repeatedSubsets))
     return True
+
+def initPoolContext(poolGlobals):
+    global shared
+    shared = poolGlobals
 
 def createONNXDict(onnxModel):
     weightsDict = {}
