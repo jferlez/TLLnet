@@ -214,6 +214,9 @@ class TLLnet:
             self.pool = mp.Pool(NUM_CPUS, initializer=initPoolContext, initargs=(self.poolGlobals, ))
 
         out = 0
+        subsetDict = {}
+        for s in self.selectorSets[out]:
+            subsetDict[s] = []
 
         singletons = []
         for linIdx in range(self.N):
@@ -223,8 +226,9 @@ class TLLnet:
                     members.append(s)
             singletons.append((frozenset([linIdx]), frozenset(members) ))
         ssets = deepcopy(singletons)
-        for ii in range(1):
-            self.assembleAdjacency(ssets,singletons,dup=True)
+        for ii in range(self.N):
+            edgeWeights, _, _, ssets = self.assembleAdjacency(ssets,singletons,dup=True if ii == 0 else False)
+            print(f'lin fn idx = {ii}\nedgeweights = {edgeWeights.toarray()}\nssets = {ssets}')
 
         self.pool.close()
         self.pool.join()
@@ -623,8 +627,8 @@ class TLLnet:
         if dup:
             edgeWeights = edgeWeights + edgeWeights.T
 
-        print(edgeWeights.toarray())
-        print(f'Repeated subsets = {repeatedSubsets}')
+        # print(edgeWeights.toarray())
+        # print(f'Repeated subsets = {repeatedSubsets}')
         # Assemble the worker results into one sparse adjacency matrix
         return (edgeWeights, emptyRows, emptyCols, repeatedSubsets)
 
@@ -645,10 +649,14 @@ def adjacencyWorker(selectorSets, U, V, dup, rng, returnQueue):
                 # Compute the number of selector sets that the augmented set U[r][SUBSET] | V[c][SUBSET] belongs to
                 # (only do this if they are disjoint)
                 if len(U[r][SUBSET] & V[c][SUBSET]) == 0:
+                    newSet = frozenset(U[r][SUBSET] | V[c][SUBSET])
+                    for rIdx in range(r):
+                        if U[rIdx][SUBSET] <= newSet:
+                            continue
                     inSelectors = frozenset(U[r][IN_SELECTORS] & V[c][IN_SELECTORS])
                     retSparse[r, c-ivl[0]] = len(inSelectors)
                     if len(inSelectors) > 1:
-                        repeatedSubsets.append(( frozenset(U[r][SUBSET] | V[c][SUBSET]), inSelectors, (r,c)))
+                        repeatedSubsets.append(( newSet, inSelectors, (r,c)))
                     if r in emptyRows:
                         emptyRows.remove(r)
                     if c in emptyCols:
