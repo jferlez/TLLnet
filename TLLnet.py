@@ -221,7 +221,7 @@ class TLLnet:
             for s in range(self.M):
                 if linIdx in self.selectorSets[out][s]:
                     members.append(s)
-            singletons.append((set([linIdx]), set(members) ))
+            singletons.append((frozenset([linIdx]), frozenset(members) ))
         ssets = deepcopy(singletons)
         for ii in range(1):
             self.assembleAdjacency(ssets,singletons,dup=True)
@@ -645,10 +645,10 @@ def adjacencyWorker(selectorSets, U, V, dup, rng, returnQueue):
                 # Compute the number of selector sets that the augmented set U[r][SUBSET] | V[c][SUBSET] belongs to
                 # (only do this if they are disjoint)
                 if len(U[r][SUBSET] & V[c][SUBSET]) == 0:
-                    inSelectors = U[r][IN_SELECTORS] & V[c][IN_SELECTORS]
+                    inSelectors = frozenset(U[r][IN_SELECTORS] & V[c][IN_SELECTORS])
                     retSparse[r, c-ivl[0]] = len(inSelectors)
                     if len(inSelectors) > 1:
-                        repeatedSubsets.append((U[r][SUBSET] | V[c][SUBSET], inSelectors, (r,c)))
+                        repeatedSubsets.append(( frozenset(U[r][SUBSET] | V[c][SUBSET]), inSelectors, (r,c)))
                     if r in emptyRows:
                         emptyRows.remove(r)
                     if c in emptyCols:
