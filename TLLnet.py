@@ -202,7 +202,9 @@ class TLLnet:
                 if sIdx < len(self.selectorSets[k]) - 1:
                     sIdx += 1
 
-    def createOptimizedKeras(self, iterationCount=2, NUM_CPUS=4):
+    def createOptimizedKeras(self, iterationCount=None, NUM_CPUS=4):
+        if iterationCount is None:
+            iterationCount = max(self.N//2,2)
         if self.pool is None:
             if self.mgr is None:
                 self.mgr = mp.Manager()
@@ -242,10 +244,11 @@ class TLLnet:
             for se in ssets:
                 for a in se[1]:
                     subsetAssignment[a].append([se[0],len(se[1])])
+            iterationCount = max(iterationCount-1,2)
             print(f'Created ssets = {ssets}')
 
         for ii in range(self.M):
-            subsetAssignment[ii].sort(key=(lambda x:x[1]))
+            subsetAssignment[ii].sort(key=(lambda x:x[1]),reverse=True)
         print(f'subsetAssignment = {subsetAssignment}')
         self.pool.close()
         self.pool.join()
