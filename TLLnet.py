@@ -242,9 +242,10 @@ class TLLnet:
                     addSet = ssets[row_match[idx]][0] | singletons[col_match[idx]][0]
                     ssetsNew.append((addSet, ssets[row_match[idx]][1] & singletons[col_match[idx]][1] ))
                     if ii > 0:
-                        subsetTree[frozenset(addSet)] = {'c': subsetTree[ssets[row_match[idx]][0]],'set':frozenset(addSet),'layer':None}
+                        subsetTree[frozenset(addSet)] = {'c': subsetTree[ssets[row_match[idx]][0]], 'p':None, 'set':frozenset(addSet),'layer':None, 'matchWeight':edgeWeights[row_match[idx],col_match[idx]]}
+                        subsetTree[ssets[row_match[idx]][0]]['p'] = subsetTree[frozenset(addSet)]
                     else:
-                        subsetTree[frozenset(addSet)] = {'c':None, 'set':frozenset(addSet),'layer':None}
+                        subsetTree[frozenset(addSet)] = {'c':None, 'p':None, 'set':frozenset(addSet),'layer':None, 'matchWeight':edgeWeights[row_match[idx],col_match[idx]]}
                 edgeWeights[row_match,col_match] = np.zeros(len(row_match),dtype=np.int32)
             ssets = ssetsNew
             for se in ssets:
@@ -253,9 +254,24 @@ class TLLnet:
             iterationCount = max(iterationCount-1,2)
             print(f'Created ssets = {ssets}')
 
+
+
         for ii in range(self.M):
-            subsetAssignment[ii].sort(key=(lambda x:x[1]),reverse=True)
+            subsetAssignment[ii].sort(key=(lambda x:len(x[0])),reverse=True)
         print(f'subsetAssignment = {subsetAssignment}')
+        print(f'subset tree = {subsetTree}')
+
+
+        realization = self.realizeMinTerms(out, subsetAssignment, subsetTree)
+        print(realization)
+
+        # Begin constructing the network:
+        inlayer = Input(shape=(self.n,), dtype=self.dtypeKeras)
+        linFnLayers = [ \
+                    Dense(1,dtype=self.dtypeKeras,name='localLin_'+str(ii)+'_'+str(out)) \
+                    for ii in range(self.N) \
+                ]
+
         self.pool.close()
         self.pool.join()
         self.pool = None
@@ -663,9 +679,80 @@ class TLLnet:
         # Assemble the worker results into one sparse adjacency matrix
         return (edgeWeights, nonEmptyRows, nonEmptyCols, repeatedSubsets)
 
+    def realizeMinTerms(self, out, subsetAssignment, subsetTree):
+        realizations = {}
+        for ii in range(len(subsetAssignment)):
+            r = self.pool.apply_async( \
+                        realizationWorker, \
+                        ( \
+                            out, \
+                            ii, \
+                            subsetAssignment[ii], \
+                            subsetTree, \
+                            self.returnQueue \
+                        ) \
+                    )
+            # r.get()
+        numReceived = 0
+        while numReceived < len(subsetAssignment):
+            item = self.returnQueue.get()
+            realizations[item[0]] = (item[1], item[2])
+            numReceived += 1
+        print(realizations)
+        return realizations
+
 # *********************************
 # *      Helper functions:        *
 # *********************************
+
+def realizationWorker(out, idx, subsetAssignment, subsetTree, returnQueue):
+    # This function takes a list of subsets that we are going to prioritze in the construction of its respective min minterm
+    selectionSet = copy(shared['selectorSets'][out][idx])
+    selectionList = list(selectionSet)
+    selectionList.sort()
+    selectionIdx = {}
+    for ii in range(len(selectionList)):
+        selectionIdx[selectionList[ii]] = ii
+    edgeWeights = np.zeros((len(subsetAssignment),len(selectionSet)),dtype=np.int32)
+    for ii in range(len(subsetAssignment)):
+        setPtr = subsetTree[subsetAssignment[ii][0]]
+        weight = 0
+        while setPtr['c'] is not None:
+            weight += setPtr['matchWeight']
+            setPtr = setPtr['c']
+        for jj in subsetAssignment[ii][0]:
+            edgeWeights[ii,selectionIdx[jj]] = weight
+    row_match, col_match = scipy.optimize.linear_sum_assignment(edgeWeights,maximize=True)
+    setLookup = {}
+    for ii in range(len(row_match)):
+        setLookup[subsetAssignment[row_match[ii]][0]] = (ii,(row_match[ii],col_match[ii]))
+    for ii in range(len(row_match)):
+        setPtr = subsetTree[subsetAssignment[row_match[ii]][0]]
+        while setPtr['p'] is not None:
+            if setPtr['p']['set'] in setLookup:
+                setLookup.pop(subsetAssignment[row_match[ii]][0])
+                break
+            setPtr = setPtr['p']
+    validIdxs = []
+    for ky in setLookup.values():
+        validIdxs.append(ky[0])
+    validIdxs.sort()
+    row_match = row_match[validIdxs]
+    col_match = col_match[validIdxs]
+    fullWeights = {}
+    for ii in range(len(row_match)):
+        fullWeights[row_match[ii]] = edgeWeights[row_match[ii],col_match[ii]]
+    row_match = np.array(sorted(row_match,key=(lambda x: fullWeights[x]),reverse=True),dtype=np.int32)
+    residual = copy(selectionSet)
+    final_row_match = []
+    for ii in range(len(row_match)):
+        if len(subsetAssignment[row_match[ii]][0] & residual) > 0:
+            final_row_match.append(row_match[ii])
+            residual = residual - subsetAssignment[row_match[ii]][0]
+    print(f'Realization worker: {row_match}')
+    returnQueue.put((selectionSet, [subsetAssignment[ii][0] for ii in final_row_match], residual, edgeWeights))
+    return True
+
 SUBSET = 0
 IN_SELECTORS = 1
 def adjacencyWorker(selectorSets, U, V, dup, rng, returnQueue):
