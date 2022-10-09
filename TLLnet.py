@@ -217,6 +217,7 @@ class TLLnet:
 
         out = 0
         subsetAssignment = [[] for s in range(len(self.selectorSets[out]))]
+        subsetTree = {}
 
         singletons = []
         for linIdx in range(self.N):
@@ -238,7 +239,12 @@ class TLLnet:
                 row_match = row_match[goodMatchIdx]
                 col_match = col_match[goodMatchIdx]
                 for idx in range(len(row_match)):
-                    ssetsNew.append((ssets[row_match[idx]][0] | singletons[col_match[idx]][0], ssets[row_match[idx]][1] & singletons[col_match[idx]][1] ))
+                    addSet = ssets[row_match[idx]][0] | singletons[col_match[idx]][0]
+                    ssetsNew.append((addSet, ssets[row_match[idx]][1] & singletons[col_match[idx]][1] ))
+                    if ii > 0:
+                        subsetTree[frozenset(addSet)] = {'c': subsetTree[ssets[row_match[idx]][0]],'set':frozenset(addSet),'layer':None}
+                    else:
+                        subsetTree[frozenset(addSet)] = {'c':None, 'set':frozenset(addSet),'layer':None}
                 edgeWeights[row_match,col_match] = np.zeros(len(row_match),dtype=np.int32)
             ssets = ssetsNew
             for se in ssets:
