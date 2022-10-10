@@ -203,6 +203,13 @@ class TLLnet:
                     sIdx += 1
 
     def createOptimizedKeras(self, iterationCount=None, NUM_CPUS=4, dtypeKeras=tf.float32):
+        if dtypeKeras == tf.float64:
+            dtypeNpKeras = np.float64
+        elif dtypeKeras == tf.float32:
+            dtypeNpKeras = np.float32
+        else:
+            dtypeNpKeras = np.float64
+
         if iterationCount is None:
             iterationCount = max(self.N//2,2)
         if self.pool is None:
@@ -276,6 +283,13 @@ class TLLnet:
                     self.optLyrs[out]['linear'][ii](self.optLyrs['input'])
                     for ii in range(self.N) \
                 ]
+        for lyIdx in range(len(self.optLyrs[out]['linear'])):
+            self.optLyrs[out]['linear'][lyIdx].set_weights( \
+                                                [ \
+                                                    self.localLinearFns[out][0][lyIdx,:].reshape((self.n,1)).astype(dtypeNpKeras) , \
+                                                    self.localLinearFns[out][1][lyIdx].reshape((1,)).astype(dtypeNpKeras) \
+                                                ] \
+                                            )
 
         self.optLyrs[out]['output'] = self.implementRealization(out,optimizedRealizationSets, subsetTree)
 
