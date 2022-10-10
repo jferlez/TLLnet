@@ -261,8 +261,8 @@ class TLLnet:
         # print(f'subset tree = {subsetTree}')
 
 
-        self.optimizedRealization = self.realizeMinTerms(out, subsetAssignment, subsetTree)
-        print(self.optimizedRealization)
+        self.optimizedRealizationSets = self.realizeMinTerms(out, subsetAssignment, subsetTree)
+        print(self.optimizedRealizationSets)
 
         # Begin constructing the network:
         inlayer = Input(shape=(self.n,), dtype=self.dtypeKeras)
@@ -827,6 +827,27 @@ def intToSet(input_int):
         index += 1
         intCopy = intCopy >> 1
     return frozenset(output_list)
+
+def tfMinMax2(a,b,maxQ=True,dtypeKeras=tf.float32):
+    if dtypeKeras == tf.float64:
+        dtypeNpKeras = np.float64
+    elif dtypeKeras == tf.float32:
+        dtypeNpKeras = np.float32
+    else:
+        dtypeNpKeras = np.float64
+
+    l1 = Dense(4,activation='relu',use_bias=False,dtype=dtypeKeras)
+    lOut = l1(tf.concat([a,b],1))
+    l1.set_weights([np.array([[1, -1, -1, 1],[1, -1, 1, -1]],dtype=dtypeNpKeras)])
+
+    l2 = Dense(1,activation=None,use_bias=False,dtype=dtypeKeras)
+    lOut = l2(lOut)
+    if not maxQ:
+        l2.set_weights([np.array([[0.5,-0.5,-0.5,-0.5]],dtype=dtypeNpKeras).T])
+    else:
+        l2.set_weights([np.array([[0.5,-0.5,0.5,0.5]],dtype=dtypeNpKeras).T])
+
+    return lOut
 
 def MinMaxBankByN(numGroups=1,groupSize=2,outputDim=1,maxQ=True,incBias=False,flat=False, dtypeKeras=tfDataType, layerIdx=None):
 
