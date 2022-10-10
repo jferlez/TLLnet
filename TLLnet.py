@@ -890,11 +890,11 @@ def tfMinMax2(a,b,maxQ=True,dtypeKeras=tf.float32):
     else:
         dtypeNpKeras = np.float64
 
-    l1 = Dense(4,activation='relu',use_bias=False,dtype=dtypeKeras)
+    l1 = Dense(4,activation='relu',use_bias=False,trainable=False,dtype=dtypeKeras)
     lOut = l1(tf.concat([a,b],1))
     l1.set_weights([np.array([[1, -1, -1, 1],[1, -1, 1, -1]],dtype=dtypeNpKeras)])
 
-    l2 = Dense(1,activation=None,use_bias=False,dtype=dtypeKeras)
+    l2 = Dense(1,activation=None,use_bias=False,trainable=False,dtype=dtypeKeras)
     lOut = l2(lOut)
     if not maxQ:
         l2.set_weights([np.array([[0.5,-0.5,-0.5,-0.5]],dtype=dtypeNpKeras).T])
