@@ -229,7 +229,6 @@ class TLLnet:
         ssets = deepcopy(singletons)
         for ii in range(self.N):
             edgeWeights, nonEmptyRows, nonEmptyCols, ssetsFull = self.assembleAdjacency(ssets,singletons,dup=True if ii == 0 else False)
-            print(f'lin fn idx = {ii}\nedgeweights = {edgeWeights}\nssets = {ssetsFull}')
             ssetsNew = []
             for iterCnt in range(iterationCount):
                 row_match, col_match = scipy.optimize.linear_sum_assignment(edgeWeights,maximize=True)
@@ -252,18 +251,18 @@ class TLLnet:
                 for a in se[1]:
                     subsetAssignment[a].append([se[0],len(se[1])])
             iterationCount = max(iterationCount-1,2)
-            print(f'Created ssets = {ssets}')
+            # print(f'Created ssets = {ssets}')
 
 
 
         for ii in range(self.M):
             subsetAssignment[ii].sort(key=(lambda x:len(x[0])),reverse=True)
-        print(f'subsetAssignment = {subsetAssignment}')
-        print(f'subset tree = {subsetTree}')
+        # print(f'subsetAssignment = {subsetAssignment}')
+        # print(f'subset tree = {subsetTree}')
 
 
-        realization = self.realizeMinTerms(out, subsetAssignment, subsetTree)
-        print(realization)
+        self.optimizedRealization = self.realizeMinTerms(out, subsetAssignment, subsetTree)
+        print(self.optimizedRealization)
 
         # Begin constructing the network:
         inlayer = Input(shape=(self.n,), dtype=self.dtypeKeras)
@@ -634,8 +633,6 @@ class TLLnet:
             rng[-1].append((midIdx + 1, midIdx + 2))
             numReturns += 1
 
-        print(f'rng = {rng}')
-
         # Create a process pool
         # returnQueue = mp.Queue()
         for ii in range(len(rng)):
@@ -698,7 +695,6 @@ class TLLnet:
             item = self.returnQueue.get()
             realizations[item[0]] = (item[1], item[2])
             numReceived += 1
-        print(realizations)
         return realizations
 
 # *********************************
@@ -749,7 +745,6 @@ def realizationWorker(out, idx, subsetAssignment, subsetTree, returnQueue):
         if len(subsetAssignment[row_match[ii]][0] & residual) > 0:
             final_row_match.append(row_match[ii])
             residual = residual - subsetAssignment[row_match[ii]][0]
-    print(f'Realization worker: {row_match}')
     returnQueue.put((selectionSet, [subsetAssignment[ii][0] for ii in final_row_match], residual, edgeWeights))
     return True
 
@@ -772,7 +767,6 @@ def adjacencyWorker(selectorSets, U, V, dup, rng, returnQueue):
                         if U[rIdx][SUBSET] <= newSet:
                             continue
                     if max(V[c][SUBSET])<max(newSet):
-                        print(f'{V[c][SUBSET]} and {newSet}')
                         continue
                     inSelectors = frozenset(U[r][IN_SELECTORS] & V[c][IN_SELECTORS])
                     retSparse[r, c-ivl[0]] = len(inSelectors)
