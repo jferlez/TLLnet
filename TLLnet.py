@@ -202,7 +202,7 @@ class TLLnet:
                 if sIdx < len(self.selectorSets[k]) - 1:
                     sIdx += 1
 
-    def createOptimizedKeras(self, iterationCount=None, NUM_CPUS=4):
+    def createOptimizedKeras(self, iterationCount=None, NUM_CPUS=4, dtypeKeras=tf.float32):
         if iterationCount is None:
             iterationCount = max(self.N//2,2)
         if self.pool is None:
@@ -261,20 +261,60 @@ class TLLnet:
         # print(f'subset tree = {subsetTree}')
 
 
-        self.optimizedRealizationSets = self.realizeMinTerms(out, subsetAssignment, subsetTree)
-        print(self.optimizedRealizationSets)
+        optimizedRealizationSets = self.realizeMinTerms(out, subsetAssignment, subsetTree)
+        print(optimizedRealizationSets)
 
         # Begin constructing the network:
-        inlayer = Input(shape=(self.n,), dtype=self.dtypeKeras)
-        linFnLayers = [ \
-                    Dense(1,dtype=self.dtypeKeras,name='localLin_'+str(ii)+'_'+str(out)) \
+        self.optLyrs = {}
+        self.optLyrs[out] = {}
+        self.optLyrs['input'] = Input(shape=(self.n,), dtype=dtypeKeras)
+        self.optLyrs[out]['linear'] = [ \
+                    Dense(1,dtype=dtypeKeras,name='localLin_'+str(ii)+'_'+str(out)) \
                     for ii in range(self.N) \
                 ]
+        self.optLyrs[out]['linearOutputs'] = [ \
+                    self.optLyrs[out]['linear'][ii](self.optLyrs['input'])
+                    for ii in range(self.N) \
+                ]
+
+        self.optLyrs[out]['output'] = self.implementRealization(out,optimizedRealizationSets, subsetTree)
 
         self.pool.close()
         self.pool.join()
         self.pool = None
+        self.optModel = Model(self.optLyrs['input'],self.optLyrs[out]['output'])
         return
+
+    def implementRealization(self,out,realizationSets,subsetTree):
+        minRealizations = {}
+        for real in realizationSets.keys():
+            commons = realizationSets[real][0]
+            resid = realizationSets[real][1]
+            minRealizations[real] = []
+            for cset in commons:
+                minRealizations[real].append(self.implementCommon(out,cset,subsetTree))
+            if len(resid) > 0:
+                minRealizations[real].append(realizeMinMaxSet([self.optLyrs[out]['linearOutputs'][r] for r in resid],maxQ=False))
+            minRealizations[real] = realizeMinMaxSet(minRealizations[real],maxQ=False)
+        outLayer = realizeMinMaxSet( list(minRealizations.values()), maxQ=True )
+        return outLayer
+
+    def implementCommon(self,out,cset,subsetTree):
+        assert cset in subsetTree, 'Common set not listed in tree of common sets...'
+        csetObj = subsetTree[cset]
+        if csetObj['layer'] is None:
+            if len(csetObj['set']) == 2:
+                constituents = list(csetObj['set'])
+                left = self.optLyrs[out]['linearOutputs'][constituents[0]]
+                right = self.optLyrs[out]['linearOutputs'][constituents[1]]
+            else:
+                assert csetObj['c'] is not None
+                newElem = list(csetObj['set'] - csetObj['c']['set'])
+                assert len(newElem) == 1
+                left = self.optLyrs[out]['linearOutputs'][newElem[0]]
+                right = self.implementCommon(out,csetObj['c']['set'],subsetTree)
+            csetObj['layer'] = tfMinMax2(left, right, maxQ=False)
+        return csetObj['layer']
 
     def setKerasLocalLinFns(self, kern, bias, out=0):
         currWeights = self.linearLayer.get_weights()
@@ -846,6 +886,22 @@ def tfMinMax2(a,b,maxQ=True,dtypeKeras=tf.float32):
         l2.set_weights([np.array([[0.5,-0.5,-0.5,-0.5]],dtype=dtypeNpKeras).T])
     else:
         l2.set_weights([np.array([[0.5,-0.5,0.5,0.5]],dtype=dtypeNpKeras).T])
+
+    return lOut
+
+def realizeMinMaxSet(lyrList, maxQ=True, dtypeKeras=tf.float32):
+    if dtypeKeras == tf.float64:
+        dtypeNpKeras = np.float64
+    elif dtypeKeras == tf.float32:
+        dtypeNpKeras = np.float32
+    else:
+        dtypeNpKeras = np.float64
+    assert len(lyrList) >= 1
+
+    lOut = lyrList[0]
+    if len(lyrList) > 1:
+        for ii in range(1,len(lyrList)):
+            lOut = tfMinMax2(lyrList[ii],lOut,maxQ=maxQ,dtypeKeras=dtypeKeras)
 
     return lOut
 
