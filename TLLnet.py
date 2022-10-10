@@ -269,7 +269,7 @@ class TLLnet:
 
 
         optimizedRealizationSets = self.realizeMinTerms(out, subsetAssignment, subsetTree)
-        print(optimizedRealizationSets)
+        # print(optimizedRealizationSets)
 
         # Begin constructing the network:
         self.optLyrs = {}
