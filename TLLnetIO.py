@@ -65,10 +65,6 @@ class TLLnet(TLLnetBase):
         else:
             self.dtypeNpKeras = np.float64
 
-        assert type(input_dim) == int and input_dim >= 1 , 'input_dim must be an integer >=1.'
-        assert type(output_dim) == int and output_dim >= 1 , 'output_dim must be an integer >=1.'
-        assert type(linear_fns) == int and linear_fns >= 1 , 'linear_fns must be an integer >=1.'
-        assert (uo_regions is None) or (type(uo_regions) == int and uo_regions >= 1) , 'uo_regions must be None or an integer >=1.'
 
         super().__init__(input_dim=input_dim, output_dim=output_dim, linear_fns=linear_fns, uo_regions=uo_regions)
 
