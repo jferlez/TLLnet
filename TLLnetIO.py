@@ -390,7 +390,7 @@ class TLLnet(TLLnetBase):
     @classmethod
     def fromTLLFormat(cls, tllfile, dtypeKeras=tfDataType, validateFile=True):
         tllDict = cls.fromTLLFormatDict(tllfile, validateFile=validateFile)
-        tll = cls(input_dim=tllDict['n'], output_dim=tllDict['m'], linear_fns=tllDict['N'], uo_regions=tllDict['M'], dtype=dtype, dtypeKeras=dtypeKeras)
+        tll = cls(input_dim=tllDict['n'], output_dim=tllDict['m'], linear_fns=tllDict['N'], uo_regions=tllDict['M'], dtype=tllDict['dtype'], dtypeKeras=dtypeKeras)
         tll.setLocalLinearFns(tllDict['localLinearFns'])
         tll.setSelectorSets(tllDict['selectorSets'])
 
