@@ -20,7 +20,7 @@ class TLLnet:
         assert type(output_dim) == int and output_dim >= 1 , 'output_dim must be an integer >=1.'
         assert type(linear_fns) == int and linear_fns >= 1 , 'linear_fns must be an integer >=1.'
         assert (uo_regions is None) or (type(uo_regions) == int and uo_regions >= 1) , 'uo_regions must be None or an integer >=1.'
-        
+
         self.n=input_dim
         self.m=output_dim
         self.N=linear_fns
