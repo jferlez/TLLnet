@@ -1,4 +1,4 @@
-from TLLnet import TLLnet
+from TLLnetIO import TLLnet
 import encapsulateLP
 from region_helpers import lpMinHRep, findInteriorPoint
 import math
