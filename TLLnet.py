@@ -11,16 +11,19 @@ from copy import copy, deepcopy
 import re
 import pickle
 
+npDataType = np.float64
 
 class TLLnet:
 
     def __init__(self, input_dim=1, output_dim=1, linear_fns=1, uo_regions=None ):
 
+        self.dtype = npDataType
+
         assert type(input_dim) == int and input_dim >= 1 , 'input_dim must be an integer >=1.'
         assert type(output_dim) == int and output_dim >= 1 , 'output_dim must be an integer >=1.'
         assert type(linear_fns) == int and linear_fns >= 1 , 'linear_fns must be an integer >=1.'
         assert (uo_regions is None) or (type(uo_regions) == int and uo_regions >= 1) , 'uo_regions must be None or an integer >=1.'
-        
+
         self.n=input_dim
         self.m=output_dim
         self.N=linear_fns
@@ -207,12 +210,15 @@ class TLLnet:
                                 or min(tllDict['selectorSets'][j][k]) < 0 \
                                 or max(tllDict['selectorSets'][j][k]) >= tllDict['N']:
                             raise(TypeError(f'{tllfile} does not contain a valid TLL format. Selector set {k} for output {j} should be a set of integers between 0 and {tllDict["N"]-1}'))
+        tllDict['dtype'] = dtype
+        return tllDict
 
 
     @classmethod
     def fromTLLFormat(cls, tllfile, validateFile=True):
         tllDict = cls.fromTLLFormatDict(tllfile, validateFile=validateFile)
         tll = cls(input_dim=tllDict['n'], output_dim=tllDict['m'], linear_fns=tllDict['N'], uo_regions=tllDict['M'])
+        tll.dtype = tllDict['dtype']
         tll.setLocalLinearFns(tllDict['localLinearFns'])
         tll.setSelectorSets(tllDict['selectorSets'])
 
