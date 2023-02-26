@@ -44,7 +44,7 @@ class TLLnet:
             assert localLinearFns[k][0].shape == (self.N,self.n) and localLinearFns[k][1].shape == (self.N,), 'Incorrect shape of local linear functions for output ' + str(k) + '!'
 
 
-        self.localLinearFns = [[x[0].astype(dtype=self.dtype), x[1].astype(dtype=self.dtype)] for x in localLinearFns]
+        self.localLinearFns = [[np.array(x[0],dtype=self.dtype), np.array(x[1],dtype=self.dtype)] for x in localLinearFns]
         if self.model is not None:
             for k in range(self.m):
                 self.setKerasLocalLinFns(self.localLinearFns[k][0].T, self.localLinearFns[k][1], out=k)
