@@ -15,6 +15,9 @@ npDataType = np.float64
 
 class TLLnet:
 
+    props = ['n','N','M','m','localLinearFns','selectorSets','TLLFormatVersion']
+    constructorArgs = {'input_dim':'n', 'output_dim':'m', 'linear_fns':'N', 'uo_regions':'M'}
+
     def __init__(self, input_dim=1, output_dim=1, linear_fns=1, uo_regions=None ):
 
         self.dtype = npDataType
@@ -24,6 +27,7 @@ class TLLnet:
         assert type(linear_fns) == int and linear_fns >= 1 , 'linear_fns must be an integer >=1.'
         assert (uo_regions is None) or (type(uo_regions) == int and uo_regions >= 1) , 'uo_regions must be None or an integer >=1.'
 
+        self.TLLFormatVersion = '0.1.0'
         self.n=input_dim
         self.m=output_dim
         self.N=linear_fns
@@ -159,9 +163,7 @@ class TLLnet:
 
     def save(self, fname=None):
         saveDict = {}
-        saveDict['TLLFormatVersion'] = '0.1.0'
-        props = ['n','N','M','m','localLinearFns','selectorSets']
-        for p in props:
+        for p in self.props:
             saveDict[p] = getattr(self,p)
         if fname is not None:
             with open(fname,'wb') as fp:
@@ -176,7 +178,7 @@ class TLLnet:
         else:
             tllDict = tllfile
             tllfile = 'Input dictionary'
-        props = ['n','N','M','m','localLinearFns','selectorSets','TLLFormatVersion']
+        props = copy(cls.props)
         if not all([p in tllDict for p in props]):
             raise(TypeError(f'{tllFile} does not contain a valid TLL Format. One or more properties are missing.'))
         dtype = npDataType
@@ -218,7 +220,7 @@ class TLLnet:
     @classmethod
     def fromTLLFormat(cls, tllfile, validateFile=True):
         tllDict = cls.fromTLLFormatDict(tllfile, validateFile=validateFile)
-        tll = cls(input_dim=tllDict['n'], output_dim=tllDict['m'], linear_fns=tllDict['N'], uo_regions=tllDict['M'])
+        tll = cls(**{ky:tllDict[val] for ky, val in cls.constructorArgs.items()})
         tll.dtype = tllDict['dtype']
         tll.setLocalLinearFns(tllDict['localLinearFns'])
         tll.setSelectorSets(tllDict['selectorSets'])
