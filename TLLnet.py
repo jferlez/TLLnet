@@ -41,6 +41,9 @@ class TLLnet:
         self.localLinearFns = [[np.zeros((self.N,self.n)),np.zeros((self.N,))] for k in range(self.m)]
         self.selectorSets = [[frozenset([0])] for k in range(self.m)]
 
+    def getLocalLinearFns(self):
+        return self.localLinearFns
+
     def setLocalLinearFns(self,localLinearFns):
 
         assert len(localLinearFns) == self.m, 'Local linear functions must be specified for each output!'
@@ -52,6 +55,9 @@ class TLLnet:
         if self.model is not None:
             for k in range(self.m):
                 self.setKerasLocalLinFns(self.localLinearFns[k][0].T, self.localLinearFns[k][1], out=k)
+
+    def getSelectorSets(self):
+        return self.selectorSets
 
     def setSelectorSets(self,selectorSets):
 
