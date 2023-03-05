@@ -188,10 +188,8 @@ class TLLnet:
         if not all([p in tllDict for p in props]):
             raise(TypeError(f'{tllFile} does not contain a valid TLL Format. One or more properties are missing.'))
         dtype = npDataType
+        props = ['n','N','M','m']
         if validateFile:
-            props.remove('TLLFormatVersion')
-            props.remove('localLinearFns')
-            props.remove('selectorSets')
             for p in props:
                 if type(tllDict[p]) != int or tllDict[p] < 0:
                     raise(TypeError(f'{tllfile} does not contain a valid TLL format. {p} should be an integer > 0.'))
