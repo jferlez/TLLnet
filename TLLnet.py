@@ -212,7 +212,7 @@ class TLLnet:
                     if tllDict['localLinearFns'][j][k].dtype != dtype:
                         raise(TypeError(f'{tllfile} does not contain a valid TLL format. \'localLinearFns\' NumPy arrays should not be of different data types.'))
                 if type(tllDict['selectorSets'][j]) != list or len(tllDict['selectorSets'][j]) == 0:
-                    raise(TypeError(f'{tllfile} does not contain a valid TLL format. Element {j} of proptery \'selectorSets\' should be a list of length at least 1.'))
+                    raise(TypeError(f'{tllfile} does not contain a valid TLL format. Element {j} of property \'selectorSets\' should be a list of length at least 1.'))
                 for k in range(len(tllDict['selectorSets'][j])):
                     if type(tllDict['selectorSets'][j][k]) != set \
                                 or any([(type(el) != int and type(el) != np.int64 and type(el) != np.uint64) for el in tllDict['selectorSets'][j][k]]) \
