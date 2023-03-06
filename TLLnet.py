@@ -13,6 +13,26 @@ import pickle
 
 npDataType = np.float64
 
+numbaAvailable = False
+try:
+    # Numba imports
+    import numba as nb
+    from numba import njit
+    from numba.core import types
+    from numba.typed import Dict
+    from numba.np.unsafe.ndarray import to_fixed_tuple
+    from numba.pycc import CC
+    selectorSetType = nb.typeof( \
+                            nb.typed.List([ \
+                                nb.typed.List([np.array([1,2], dtype=np.int64) for k in range(2)]) \
+                                for _ in range(2) \
+                            ]) \
+                        )
+    numbaAvailable = True
+except ImportError:
+    print('Warning (TLLnet): Numba is unavailable. \'evalAt\' method will be unaccelerated.')
+    numbaAvailable = False
+
 class TLLnet:
 
     props = ['n','N','M','m','localLinearFns','selectorSets','TLLFormatVersion']
@@ -38,8 +58,20 @@ class TLLnet:
 
         self.model = None
 
-        self.localLinearFns = [[np.zeros((self.N,self.n)),np.zeros((self.N,))] for k in range(self.m)]
+        self.localLinearFns = [[np.zeros((self.N,self.n),dtype=self.dtype),np.zeros((self.N,),dtype=self.dtype)] for k in range(self.m)]
+        if numbaAvailable:
+            self.localLinearFnsNumbaKern = np.vstack([self.localLinearFns[out][0] for out in range(self.m)])
+            self.localLinearFnsNumbaBias = np.vstack([self.localLinearFns[out][1].reshape(-1,1) for out in range(self.m)]).reshape(-1,1)
+            self.localLinearFns = [[ \
+                        self.localLinearFnsNumbaKern[(out*self.N):((out+1)*self.N),:], \
+                        self.localLinearFnsNumbaBias[(out*self.N):((out+1)*self.N),0]  \
+                    ] for out in range(self.m)]
         self.selectorSets = [[frozenset([0])] for k in range(self.m)]
+        if numbaAvailable:
+            self.selectorSetsNumba = nb.typed.List([ \
+                    nb.typed.List([ (out * self.N) + np.array(list(i), dtype=np.int64) for i in self.selectorSets[out] ])
+                    for out in range(self.m)
+                ])
 
     def getLocalLinearFns(self):
         return self.localLinearFns
@@ -51,10 +83,21 @@ class TLLnet:
             assert localLinearFns[k][0].shape == (self.N,self.n) and localLinearFns[k][1].shape == (self.N,), 'Incorrect shape of local linear functions for output ' + str(k) + '!'
 
 
-        self.localLinearFns = [[np.array(x[0],dtype=self.dtype), np.array(x[1],dtype=self.dtype)] for x in localLinearFns]
+        # self.localLinearFns = [[np.array(x[0],dtype=self.dtype), np.array(x[1],dtype=self.dtype)] for x in localLinearFns]
+        for out in range(self.m):
+            for i in range(2):
+                np.copyto(self.localLinearFns[out][i], localLinearFns[out][i])
         if self.model is not None:
             for k in range(self.m):
                 self.setKerasLocalLinFns(self.localLinearFns[k][0].T, self.localLinearFns[k][1], out=k)
+        
+        if numbaAvailable:
+            self.localLinearFnsNumbaKern = np.vstack([self.localLinearFns[out][0] for out in range(self.m)])
+            self.localLinearFnsNumbaBias = np.vstack([self.localLinearFns[out][1].reshape(-1,1) for out in range(self.m)]).reshape(-1,1)
+            self.localLinearFns = [[ \
+                        self.localLinearFnsNumbaKern[(out*self.N):((out+1)*self.N),:], \
+                        self.localLinearFnsNumbaBias[(out*self.N):((out+1)*self.N),0]  \
+                    ] for out in range(self.m)]
 
     def getSelectorSets(self):
         return self.selectorSets
@@ -74,6 +117,12 @@ class TLLnet:
                     self.setKerasSelector(self.selectorMatKerasFromSet(self.selectorSets[k][sIdx]), j, out=k )
                     if sIdx < len(self.selectorSets[k])-1:
                         sIdx += 1
+        if numbaAvailable:
+            self.selectorSetsNumba = nb.typed.List([ \
+                    nb.typed.List([ (out * self.N) + np.array(list(i), dtype=np.int64) for i in self.selectorSets[out] ])
+                    for out in range(self.m)
+                ])
+
     def pointEval(self,pt):
         localEval = [ lf[0] @ pt.reshape(self.n,1) + lf[1].reshape(self.N,1) for lf in self.localLinearFns ]
         for out in range(len(self.selectorSets)):
@@ -90,7 +139,37 @@ class TLLnet:
                                np.argmin(localEval[out][sSet,]) \
                                ])
         return fnsOut
+    
+    def evalAt(self, inPts, validateInput=True):
+        if validateInput:
+            assert type(inPts) is np.ndarray and len(inPts.shape) <= 2 and len(inPts.shape) > 0, f'Input must be a Numpy array with no more than two dimensions'
+            assert inPts.shape[0] == self.n, f'Input dimension 0 must match number of TLL inputs n={self.n}'
+            if len(inPts.shape) == 1:
+                pts = inPts.reshape(-1,1)
+            else:
+                pts = inPts
+        else:
+            pts = inPts
 
+        if numbaAvailable:
+            return getActiveAtHelperNumba(self.n, self.N, self.M, self.m, self.localLinearFnsNumbaKern, self.localLinearFnsNumbaBias, self.selectorSetsNumba, pts)
+        else:
+            localEval = [ lf[0] @ pts.reshape(self.n, pts.shape[1]) + lf[1].reshape(self.N,1) for lf in self.localLinearFns ]
+            fnsOut = np.zeros((self.m, pts.shape[1]), dtype=np.int64)
+            minTerms = np.zeros((self.m, pts.shape[1]), dtype=np.int64)
+            retEval = np.zeros((self.m, pts.shape[1]), dtype=np.float64)
+            for out in range(len(self.selectorSets)):
+                minTerms[out, :] = np.argmax(np.array([ np.min(localEval[out][tuple(sSet),],axis=0) for sSet in self.selectorSets[out] ],dtype=npDataType), axis=0)
+                sSets = [ tuple(self.selectorSets[out][k]) for k in minTerms[out] ]
+                fnsOut[out, :] = np.array( \
+                        [ sSets[idx][ np.argmin(localEval[out][sSets[idx],idx], axis=0) ] for idx in range(len(sSets)) ], \
+                        dtype=np.int64 \
+                    )
+                retEval[out, :] = np.array( \
+                                [localEval[out][fnsOut[out,i], i] for i in range(fnsOut.shape[1])], dtype=np.float64 \
+                            )
+            return retEval, fnsOut, minTerms
+    
     def selectorMatKerasFromSet(self,actSet):
         if len(actSet) == 0:
             raise ValueError('Please specify a non-empty set!')
@@ -262,7 +341,54 @@ def intToSet(input_int):
         intCopy = intCopy >> 1
     return frozenset(output_list)
 
+if numbaAvailable:
+    @njit( \
+        nb.types.Tuple((nb.types.float64[:,:], nb.types.int64[:,:], nb.types.int64[:,:]))( \
+            nb.types.int64, \
+            nb.types.int64, \
+            nb.types.int64, \
+            nb.types.int64, \
+            nb.types.float64[:,::1], \
+            nb.types.float64[:,:], \
+            selectorSetType, \
+            nb.types.float64[:,::1] \
+        ), \
+        cache=True \
+    )
+    def getActiveAtHelperNumba(n, N, M, m, localLinearFnsKern, localLinearFnsBias, selectorSets, pts):
+        fnsOut = np.zeros((m, pts.shape[1]), dtype=np.int64)
+        minTerms = np.zeros((m, pts.shape[1]), dtype=np.int64)
+        retEval = np.full((m, pts.shape[1]), -np.inf, dtype=np.float64)
+        nPts = pts.shape[1]
 
+        # minTermVal = np.full((m,nPts),np.inf, dtype=np.float64)
+        tempMinVal = np.full((nPts,),np.inf, dtype=np.float64)
+        # maxTermVal = np.full((m,nPts),-np.inf, dtype=np.float64)
+        # minIdx = np.zeros((m,nPts),dtype=np.int64)
+        tempMinIdx = np.zeros((nPts,),dtype=np.int64)
+        # maxIdx = np.zeros((m,nPts),dtype=np.int64)
+
+        localEval = localLinearFnsKern @ pts + localLinearFnsBias
+
+
+        for out in range(m):
+            for sIdx in range(len(selectorSets[out])):
+                # Compute one min term:
+                tempMinVal[:] = np.full((nPts,),np.inf,dtype=np.float64)
+                tempMinIdx[:] = np.zeros((nPts,),dtype=np.int64)
+                for idx in selectorSets[out][sIdx]:
+                    for pIdx in range(nPts):
+                        if localEval[idx,pIdx] < tempMinVal[pIdx]:
+                            tempMinVal[pIdx] = localEval[idx,pIdx]
+                            tempMinIdx[pIdx] = idx % N
+                # Update max as needed
+                for pIdx in range(nPts):
+                    if tempMinVal[pIdx] > retEval[out,pIdx]:
+                        retEval[out,pIdx] = tempMinVal[pIdx]
+                        fnsOut[out,pIdx] = tempMinIdx[pIdx]
+                        minTerms[out,pIdx] = sIdx
+
+        return retEval, fnsOut, minTerms
 
 
 # if __name__ == '__main__':
