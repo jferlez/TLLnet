@@ -303,7 +303,7 @@ class TLLnet:
     @classmethod
     def fromTLLFormat(cls, tllfile, validateFile=True):
         tllDict = cls.fromTLLFormatDict(tllfile, validateFile=validateFile)
-        tll = cls(**{ky:tllDict[val] for ky, val in cls.constructorArgs.items()})
+        tll = cls(**{ky:tllDict[val] for ky, val in cls.constructorArgs.items() if val in tllDict})
         tll.dtype = tllDict['dtype']
         tll.setLocalLinearFns(tllDict['localLinearFns'])
         tll.setSelectorSets(tllDict['selectorSets'])
