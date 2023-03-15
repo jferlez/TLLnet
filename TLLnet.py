@@ -265,7 +265,7 @@ class TLLnet:
             tllfile = 'Input dictionary'
         props = copy(cls.props)
         if not all([p in tllDict for p in props]):
-            raise(TypeError(f'{tllFile} does not contain a valid TLL Format. One or more properties are missing.'))
+            raise(TypeError(f'{tllfile} does not contain a valid TLL Format. One or more properties are missing.'))
         dtype = npDataType
         props = ['n','N','M','m']
         if validateFile:
