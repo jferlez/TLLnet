@@ -21,7 +21,6 @@ try:
     from numba.core import types
     from numba.typed import Dict
     from numba.np.unsafe.ndarray import to_fixed_tuple
-    from numba.pycc import CC
     selectorSetType = nb.typeof( \
                             nb.typed.List([ \
                                 nb.typed.List([np.array([1,2], dtype=np.int64) for k in range(2)]) \
