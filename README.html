@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>TLLnet</title>
+        <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+        
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+        
+    </head>
+    <body class="vscode-body vscode-light">
+        <h1 id="tllnet">TLLnet</h1>
+<p>The <code>TLLnet</code> Python package implements basic functionality for Two-Level Lattice (TLL) Neural Networks (NNs). This functionaility includes:</p>
+<ul>
+<li>Saving/Loading TLL NNs to disk</li>
+<li>Evaluating TLL NNs on inputs</li>
+<li>Converting TLL NNs to Keras/ONNX models</li>
+</ul>
+<p>For a primer on TLL NNs, please see:</p>
+<blockquote>
+<p><em>AReN: Assured ReLU NN Architecture for Model Predictive Control of LTI Systems.</em><br>
+James Ferlez and Yasser Shoukry. HSCC '20: 23rd ACM International Conference on Hybrid Systems: Computation and Control, May 2020. Article No.: 6. Pages 1–11. <a href="https://dl.acm.org/doi/10.1145/3365365.3382213">https://doi.org/10.1145/3501710.3519533</a></p>
+</blockquote>
+<p><em>Please contact <a href="mailto:jferlez@uci.edu">jferlez@uci.edu</a> with any questions/bug reports.</em></p>
+<h2 id="1-prerequisites">1) Prerequisites</h2>
+<p>This package implements two classes: <code>TLLnet</code> and <code>TLLnetIO</code>. These classes have purposely different prerequisites:</p>
+<p><code>TLLnet</code> Prerequisites:</p>
+<ul>
+<li><a href="https://numpy.org/">Numpy</a> (Python)</li>
+<li><a href="https://scipy.org/">Scipy</a> (Python)</li>
+<li><em>Optional for fast TLL evaluation:</em> <a href="https://numba.pydata.org/">Numba</a> (Python)</li>
+</ul>
+<p><code>TLLnetIO</code> Prerequisites:</p>
+<ul>
+<li><code>TLLnet</code> prerequisites listed above</li>
+<li><a href="https://keras.io/">TensorFlow/Keras</a> (Python)</li>
+<li><em>Optional for ONNX output:</em> <a href="https://github.com/onnx/onnx">ONNX</a> (Python)</li>
+</ul>
+<h2 id="2-basic-usage">2) Basic Usage</h2>
+<h3 id="constructor">Constructor</h3>
+<p>To create a <code>TLLnet</code> instance, call its constructor using the following keyword arguments (with example values):</p>
+<pre><code class="language-Python">tllInst = TLLnet(input_dim=<span class="hljs-number">2</span>, output_dim=<span class="hljs-number">1</span>, linear_fns=<span class="hljs-number">10</span>, uo_regions=<span class="hljs-number">10</span>)
+</code></pre>
+<p>These keyword arguments have the following meanings/default values:</p>
+<dl>
+	<dt><tt>'input_dim'</tt></dt>
+    <dd>the input dimension of the TLL, aka <tt>n</tt> (Integer; default = 1)</dd>
+	<dt><tt>'output_dim'</tt></dt>
+    <dd>the output dimension of the TLL, aka <tt>m</tt> (Integer; default = 1)</dd>
+    <dt><tt>'linear_fns'</tt></dt>
+    <dd>the number of local linear functions of the TLL, aka <tt>N</tt> (Integer; default = 1)</dd>
+    <dt><tt>'uo_regions'</tt></dt>
+    <dd>the number of selector sets/UO regions of the TLL, aka <tt>M</tt> (Integer; default = <tt>sum([scipy.special.binom((N**2-N)/2,i) for i in range(N+1)])</tt>)</dd>
+</dl>
+<blockquote>
+<p><strong>NOTE:</strong> <code>TLLnet</code> instances are instantiated with empty local linear functions and selector sets. These must be subsequently set as described below.</p>
+</blockquote>
+<h3 id="setting-local-linear-functions">Setting Local Linear Functions</h3>
+<p>To specify the local linear functions of a <code>TLLnet</code> instance <code>tllInst</code>, use the <code>setLocalLinearFns</code> method. That is,</p>
+<pre><code class="language-Python">tllInst.setLocalLinearFns(localLinearFns)
+</code></pre>
+<p>where the single argument <code>localLinearFns</code> is as follows:</p>
+<dl>
+	<dt><tt>localLinearFns</tt></dt>
+    <dd>A Python list of length equal to <tt>output_dim</tt> (aka <tt>m</tt>), each element of which is a Python list of length 2; each of these sub-lists specified the weights and biases for that output of the local linear functions for that TLL output, specified as Numpy arrays.
+</dl>
+<p>Using the parameters in the example above, the following is a valid call to <code>tllInst.setLocalLinearFns</code>:</p>
+<pre><code class="language-Python"><span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+tllInst.setLocalLinearFns([
+    [np.ones((<span class="hljs-number">10</span>, <span class="hljs-number">2</span>)), np.zeros((<span class="hljs-number">10</span>,<span class="hljs-number">1</span>))]
+])
+</code></pre>
+<p>since that TLL has 2 inputs, 1 output and 10 local linear functions.</p>
+<h3 id="setting-selector-sets">Setting Selector Sets</h3>
+<p>To specify the selector sets of a <code>TLLnet</code> instance <code>tllInst</code>, use the <code>setSelectorSets</code> method. That is,</p>
+<pre><code class="language-Python">tllInst.setSelectorSets(selectorSets)
+</code></pre>
+<p>where the single argument <code>selectorSets</code> is as follows:</p>
+<dl>
+	<dt><tt>selectorSets</tt></dt>
+    <dd>A Python list of length equal to <tt>output_dim</tt> (aka <tt>m</tt>), each element of which is a Python list of length at most <tt>M</tt>; each of these sub-lists is a list of Python sets, which are individually subsets of <tt>set(i for i in range(N))</tt>.
+</dl>
+<p>Using the parameters in the example above, the following is a valid call to <code>tllInst.setLocalLinearFns</code>:</p>
+<pre><code class="language-Python"><span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+tllInst.setSelectorSets([
+    [{<span class="hljs-number">0</span>}, {<span class="hljs-number">0</span>,<span class="hljs-number">1</span>}, {<span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">2</span>}, {<span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">2</span>,<span class="hljs-number">3</span>}, {<span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">2</span>,<span class="hljs-number">3</span>,<span class="hljs-number">4</span>}, {<span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">2</span>,<span class="hljs-number">3</span>,<span class="hljs-number">4</span>,<span class="hljs-number">5</span>}, {<span class="hljs-number">5</span>,<span class="hljs-number">6</span>}, {<span class="hljs-number">6</span>,<span class="hljs-number">7</span>}, {<span class="hljs-number">8</span>,<span class="hljs-number">9</span>}, {<span class="hljs-number">9</span>}]
+])
+</code></pre>
+<p>since that TLL has 1 output, 10 local linear functions and 10 selector sets.</p>
+<h2 id="3-saving-tll-nns-to-disk">3) Saving TLL NNs to Disk</h2>
+<p>The <code>TLLnet</code> class provides a <code>save</code> method that can be used to save a TLL to disk. This method has two modes of operation.</p>
+<h3 id="invoking-save-with-no-arguments">Invoking <code>save</code> with no Arguments</h3>
+<p>When invoked with no arguments, the <code>save</code> method returns an ordinary Python containing all of the information needed to reconstruct the TLL. For example:</p>
+<pre><code class="language-Python">tllDict = tllInst.save()
+</code></pre>
+<p>will produce a Python dictionary <code>tllDict</code> which has keys:</p>
+<dl>
+	<dt><tt>'n'</tt></dt>
+    <dd>the input dimension of the TLL</dd>
+	<dt><tt>'m'</tt></dt>
+    <dd>the output dimension of the TLL</dd>
+    <dt><tt>'N'</tt></dt>
+    <dd>the number of local linear functions of the TLL</dd>
+    <dt><tt>'M'</tt></dt>
+    <dd>the number of selector sets/UO regions of the TLL</dd>
+    <dt><tt>'localLinearFuns'</tt></dt>
+    <dd>a list containing the local linear functions for each TLL output in the form:  [W, b] where W is an (N x n) dimensional Numpy array and b is an (N x 1) dimensional Numpy array</dd>
+    <dt><tt>'selectorSets'</tt></dt>
+    <dd>a list containing the selector sets for each TLL output as a list of Python <tt>frozensets</tt>, with each such frozenset a subset of <tt>set(i for i in range(N))</tt></dd>
+    <dt><tt>'TLLFormatVersion'</tt></dt>
+    <dd>a string specifying the format version number (currently <tt>'0.1.0'</tt>)</dd>
+</dl>
+<p>Dictionaries in this format can be used to create a new TLL instance by supplying them as an argument to the class method <code>TLLnet.fromTLLFormat</code>. That is, the following code effectively &quot;deep copies&quot; <code>tllInst</code> into <code>tllInst2</code>:</p>
+<pre><code class="language-Python">tllDict = tllInst.save()
+tllInst2 = TLLnet.fromTLLFormat(tllDict)
+</code></pre>
+<blockquote>
+<p><strong>NOTE:</strong> This allows TLL instances to be passed between Python processes with minimal <code>pickle</code> overhead, since only Python built-in objects and buffer-based objects are contained in these dictionaries. It also allows users to easily serialize TLL objects using a serialization protocol of their choice.</p>
+</blockquote>
+<h3 id="invoking-save-with-one-argument">Invoking <code>save</code> with One Argument</h3>
+<p>The <code>save</code> method of <code>TLLnet</code> takes an optional keyword argument <code>fname=</code>; this argument accepts a string containing a file name, and saves the TLL to disk in a file with that name. For example:</p>
+<pre><code class="language-Python">tllInst.save(fname=<span class="hljs-string">&#x27;my_tll.tll&#x27;</span>)
+</code></pre>
+<p>will save the TLL to the file <code>my_tll.tll</code>.</p>
+<p>TLLs saved in this way can be loaded using the <code>TLLnet.fromTLLFormat</code> class method by simply providing a file name string as an argument (instead of a dictionary as in <a href="#invoking-save-with-no-arguments">Invoking <code>save</code> with no Arguments</a>). For example, the following code will load the file created above into a new TLL instance:</p>
+<pre><code class="language-Python">tllInst2 = TLLnet.fromTLLFormat(<span class="hljs-string">&#x27;my_tll.tll&#x27;</span>)
+</code></pre>
+<blockquote>
+<p><strong>NOTE:</strong> Internally, this usage creates a Python dictionary as in <a href="#invoking-save-with-no-arguments">Invoking <code>save</code> with no Arguments</a>, and saves it to disk using <code>pickle.dump</code>. Thus, these files can be manuallly loaded and examined using code such as:</p>
+<pre><code class="language-Python"><span class="hljs-keyword">import</span> pickle
+<span class="hljs-keyword">with</span> <span class="hljs-built_in">open</span>(<span class="hljs-string">&#x27;my_tll.tll&#x27;</span>,<span class="hljs-string">&#x27;rb&#x27;</span>) <span class="hljs-keyword">as</span> fp:
+  tllDict = pickle.load(fp)
+</code></pre>
+<p>with <code>tllDict</code> containing keys/data as described above in <a href="#invoking-save-with-no-arguments">Invoking <code>save</code> with no Arguments</a> .</p>
+</blockquote>
+<blockquote>
+<p><strong>NOTE:</strong> It is expected that future versions of <code>TLLnet</code> will implement saving with the option of selecting other serialization protocols.</p>
+</blockquote>
+<h2 id="4-working-with-tll-nns-in-other-nn-formats">4) Working with TLL NNs in other NN Formats</h2>
+<p>To convert TLLs to other formats, you should work with an instance of the <code>TLLnetIO</code> class, which subclasses the <code>TLLnet</code> class. To obtain an instance of the former from an instance of the latter, you can use the export features described above:</p>
+<pre><code class="language-Python">tllIOInst = TLLnet.TLLnetIO.fromTLLFormat(tllInst.save())
+</code></pre>
+<p>The call <code>tllInst.save()</code> creates a Python dictionary description of the <code>TLLnet</code> instance <code>tllInst</code>; the call <code>TLLnet.TLLnetIO.fromTLLFormat</code> then loads that dictionary into a new instance of the <code>TLLnetIO</code> class. See also Section <a href="#3-saving-tll-nns-to-disk">3) Saving TLL NNs to Disk</a>.</p>
+<p>Instances of <code>TLLnetIO</code> have several additional methods for manipulating and exporting to Keras and ONNX formats (if ONNX is available).</p>
+<h3 id="on-nn-framework-datatypes">On NN Framework Datatypes</h3>
+<p>The constructor for <code>TLLnetIO</code> has an additional keyword parameter <code>dtypeKeras=</code> to specify the data type to use for Keras models; the class method <code>fromTLLFormat</code> responds to the same keyword argument. For example:</p>
+<pre><code class="language-Python"><span class="hljs-keyword">import</span> tensorflow <span class="hljs-keyword">as</span> tf
+
+tllIOInst = TLLnet.TLLnetIO(input_dim=<span class="hljs-number">2</span>, output_dim=<span class="hljs-number">1</span>, linear_fns=<span class="hljs-number">10</span>, uo_regions=<span class="hljs-number">10</span>, dtypeKeras=tf.float32)
+tllIOInst = TLLnet.TLLnetIO.fromTLLFormat(tllInst.save(),dtypeKeras=tf.float64)
+
+</code></pre>
+<h3 id="working-tll-nns-as-keras-models">Working TLL NNs as Keras Models</h3>
+<p>To create a Keras model of a <code>TLLnetIO</code> instance, use the <code>createKeras</code> method:</p>
+<pre><code class="language-Python">tllIOInst.createKeras()
+</code></pre>
+<p>The result will be a new property of <code>tllIOInst</code> called <code>model</code>; this property contains a compiled Keras model implementation of the TLL NN.</p>
+<blockquote>
+<p><strong>NOTE:</strong> Subsequent calls to <code>tllIOInst.setLocalLinearFns</code> or <code>tllIOInst.setSelectorSets</code> will automatically update the Keras model stored in the <code>model</code> property.</p>
+</blockquote>
+<p>The <code>model</code> property can be used just as any other Keras model, including for export and prediction:</p>
+<pre><code class="language-Python">tllIOInst.model.save(<span class="hljs-string">&#x27;my_tll.keras&#x27;</span>)
+
+<span class="hljs-comment"># Assuming tllIOInst.n == 2</span>
+<span class="hljs-keyword">import</span> numpy <span class="hljs-keyword">as</span> np
+outpus = tllIOInst.model.predict(np.random.random((<span class="hljs-number">1000</span>, <span class="hljs-number">2</span>)))
+</code></pre>
+<h3 id="exporting-tll-nns-to-onnx">Exporting TLL NNs to ONNX</h3>
+<p>To export an ONNX model of a TLL NN, first (re-)create a Keras model using the <code>createKeras</code> method with the following arguments:</p>
+<pre><code class="language-Python">tllIOInst.createKeras(incBias=<span class="hljs-literal">True</span>,flat=<span class="hljs-literal">True</span>)
+</code></pre>
+<p>Now it is possible to export an ONNX file using the <code>exportONNX</code> method:</p>
+<pre><code class="language-Python">tllIOInst.exportONNX(fname=<span class="hljs-string">&#x27;my_tll.onnx&#x27;</span>)
+</code></pre>
+<p>which will save an ONNX implementation of <code>tllIOInst</code> in the file <code>my_tll.onnx</code>.</p>
+
+        
+        
+    </body>
+    </html>
