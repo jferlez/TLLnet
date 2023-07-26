@@ -81,7 +81,7 @@ tllInst.setSelectorSets(selectorSets)
 where the single argument `selectorSets` is as follows:
 <dl>
 	<dt><tt>selectorSets</tt></dt>
-    <dd>A Python list of length equal to <tt>output_dim</tt> (aka <tt>m</tt>), each element of which is a Python list of length at most <tt>M</tt>; each of these sub-lists is a list of Python sets, which are individually subsets of <tt>set(i for i in range(N))</tt>.
+    <dd>A Python list of length equal to <tt>output_dim</tt> (aka <tt>m</tt>), each element of which is a Python list of length at most <tt>M</tt>; each of these sub-lists is a list of Python sets, which are individually subsets of <tt>set(range(N))</tt>.
 </dl>
 
 Using the parameters in the example above, the following is a valid call to `tllInst.setLocalLinearFns`:
@@ -116,7 +116,7 @@ will produce a Python dictionary `tllDict` which has keys:
     <dt><tt>'localLinearFuns'</tt></dt>
     <dd>a list containing the local linear functions for each TLL output in the form:  [W, b] where W is an (N x n) dimensional Numpy array and b is an (N x 1) dimensional Numpy array</dd>
     <dt><tt>'selectorSets'</tt></dt>
-    <dd>a list containing the selector sets for each TLL output as a list of Python <tt>frozensets</tt>, with each such frozenset a subset of <tt>set(i for i in range(N))</tt></dd>
+    <dd>a list containing the selector sets for each TLL output as a list of Python <tt>frozensets</tt>, with each such frozenset a subset of <tt>set(range(N))</tt></dd>
     <dt><tt>'TLLFormatVersion'</tt></dt>
     <dd>a string specifying the format version number (currently <tt>'0.1.0'</tt>)</dd>
 </dl>
